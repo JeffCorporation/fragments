@@ -1,0 +1,14 @@
+# Caddy reverse proxy for fragments — automatic HTTPS (Let's Encrypt).
+#
+# 1. Replace photos.example.com with your domain (A/AAAA record → this VPS).
+# 2. systemd path:  caddy run --config deploy/Caddyfile   (upstream 127.0.0.1:8080)
+#    Docker path:   set FRAGMENTS_UPSTREAM=fragments:8080 in the caddy service env.
+#
+# flush_interval -1 disables response buffering so /api/events (SSE) streams
+# live status to the browser without delay.
+
+photos.example.com {
+	reverse_proxy {$FRAGMENTS_UPSTREAM:127.0.0.1:8080} {
+		flush_interval -1
+	}
+}

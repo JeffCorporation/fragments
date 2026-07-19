@@ -1,0 +1,25 @@
+# Secrets — never commit
+.env
+
+# Local catalog output (SQLite DB + generated thumbnails)
+/data/
+/web/data/
+
+# Build artifacts
+/fragments
+/fragments.exe
+/fragments-linux-amd64
+/cmd/fragments/fragments
+
+# Local test photos
+/sample/
+
+# Frontend
+/web/node_modules/
+# dist is a build artifact, but keep a placeholder so `go:embed all:dist`
+# compiles on a fresh checkout (run `make build` / npm run build to populate it).
+/web/dist/*
+!/web/dist/.gitkeep
+
+/.claude/
+/.idea/

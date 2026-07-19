@@ -1,0 +1,17 @@
+# Keep secrets, personal data and build artifacts OUT of the Docker build
+# context — deploy/Dockerfile does `COPY . .`, and anything sent as context can
+# end up in intermediate image layers.
+.git
+.idea
+.claude
+.env
+data/
+web/data/
+sample/
+web/node_modules/
+web/dist/
+*.exe
+fragments
+fragments-linux-amd64
+upload-to-s3.sh
+upload-to-s3.cmd

@@ -1,0 +1,42 @@
+# Optional Docker path: fragments + Caddy (auto-HTTPS). The systemd path is
+# lighter and is the primary recommendation; use this if you prefer containers.
+#
+#   cd deploy && docker compose up -d --build
+#
+# Fill ../.env first (FRAGMENTS_PASSWORD, FRAGMENTS_SECRET, FRAGMENTS_SECURE=true,
+# FRAGMENTS_TRUSTED_PROXIES, S3_* credentials), and set your domain in ./Caddyfile.
+
+services:
+  fragments:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    env_file: ../.env
+    volumes:
+      - fragments-data:/data       # catalog.db + thumbs (persisted across rebuilds)
+    expose:
+      - "8080"
+    restart: unless-stopped
+    # Exceed the 15s writer-drain cap before Docker SIGKILLs (matches systemd's
+    # TimeoutStopSec=30) so a catalog run finishes its in-flight write on stop.
+    stop_grace_period: 30s
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      FRAGMENTS_UPSTREAM: fragments:8080
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - fragments
+    restart: unless-stopped
+
+volumes:
+  fragments-data:
+  caddy-data:
+  caddy-config:

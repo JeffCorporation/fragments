@@ -1,0 +1,41 @@
+# systemd unit for fragments (primary VPS path — no Docker needed).
+#
+# Install:
+#   sudo useradd --system --home /opt/fragments --shell /usr/sbin/nologin fragments
+#   sudo mkdir -p /opt/fragments/data && sudo chown -R fragments:fragments /opt/fragments
+#   # copy the linux/amd64 binary (make linux) to /opt/fragments/fragments
+#   # copy your filled .env to /opt/fragments/.env  (chmod 600, owner fragments)
+#   sudo cp deploy/fragments.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now fragments
+#
+# The binary embeds the SPA, so this single file + the data dir is the whole app.
+
+[Unit]
+Description=fragments photo catalog web server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fragments
+Group=fragments
+WorkingDirectory=/opt/fragments
+EnvironmentFile=/opt/fragments/.env
+# Bind to localhost only; Caddy terminates TLS and proxies to it.
+ExecStart=/opt/fragments/fragments serve -data /opt/fragments/data -addr 127.0.0.1:8080
+Restart=on-failure
+RestartSec=3
+
+# Give the worker pool's writer time to drain on stop (graceful shutdown).
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# Hardening.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/fragments/data
+
+[Install]
+WantedBy=multi-user.target
