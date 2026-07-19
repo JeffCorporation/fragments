@@ -1,0 +1,42 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # GoReleaser lit l'historique et les tags (changelog)
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # Le binaire Go embarque la SPA (go:embed all:dist) — la construire avant.
+      # vite vide dist/ : on restaure le placeholder .gitkeep commité, sinon
+      # GoReleaser refuse l'arbre git sale.
+      - name: Build SPA
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+          touch dist/.gitkeep
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

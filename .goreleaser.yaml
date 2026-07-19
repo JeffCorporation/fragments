@@ -1,0 +1,56 @@
+# GoReleaser v2 — binaires de release pour windows/amd64, linux/amd64 et
+# linux/arm64. Déclenché par le workflow .github/workflows/release.yml au push
+# d'un tag v*. La SPA doit être compilée AVANT (le binaire l'embarque via
+# go:embed) ; le workflow s'en charge, le hook ci-dessous ne fait que vérifier.
+version: 2
+
+project_name: fragments
+
+before:
+  hooks:
+    - sh -c "test -f web/dist/index.html || { echo 'web/dist est vide — construire la SPA d abord (cd web && npm run build)'; exit 1; }"
+
+builds:
+  - main: ./cmd/fragments
+    binary: fragments
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+      - .env.example
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs'
+      - '^chore'
+
+release:
+  header: |
+    **fragments** — cataloguez vos photos stockées sur un bucket S3 et
+    triez-les depuis une galerie web auto-hébergée. Binaires Windows et Linux
+    ci-dessous ; voir le
+    [README](https://github.com/JeffCorporation/fragments#readme) pour la
+    prise en main.

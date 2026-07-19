@@ -42,8 +42,13 @@ service externe, et tourne très bien sur un mini-VPS.
 
 ## Démarrage rapide
 
-Prérequis : Go 1.26+, Node 22+ (pour compiler la SPA), et un bucket S3 quelque
-part.
+Pas envie de compiler ? Des binaires **Windows** et **Linux** prêts à l'emploi
+sont publiés dans l'onglet
+[Releases](https://github.com/JeffCorporation/fragments/releases) — téléchargez,
+extrayez, et passez directement à l'étape 0.
+
+Pour compiler vous-même : Go 1.26+, Node 22+ (pour la SPA), et un bucket S3
+quelque part.
 
 ```bash
 # 0. Configurer

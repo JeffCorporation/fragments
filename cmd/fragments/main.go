@@ -25,6 +25,9 @@ import (
 	"fragments/catalog"
 )
 
+// version is stamped by GoReleaser at release time (-X main.version=...).
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage(os.Stderr)
@@ -50,7 +53,7 @@ func main() {
 // usage prints the top-level command list. Each subcommand has its own -h for
 // the full flag set (e.g. `fragments scan -h`).
 func usage(w io.Writer) {
-	fmt.Fprint(w, `fragments — catalogue, browse and grade your photos.
+	fmt.Fprintf(w, `fragments %s — catalogue, browse and grade your photos.
 
 Usage:
   fragments <command> [flags]
@@ -61,7 +64,7 @@ Commands:
   backup   back up the catalog database
 
 Run "fragments <command> -h" for the flags of a command.
-`)
+`, version)
 }
 
 // catalogMain runs the sequential cataloging CLI and returns a process exit
