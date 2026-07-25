@@ -79,8 +79,11 @@ documente chaque variable) :
 | `S3_BUCKET` | bucket cible |
 | `S3_REGION` / `S3_ENDPOINT` | région et endpoint du fournisseur |
 | `S3_FORCE_PATH_STYLE` | `true` pour MinIO et consorts |
-| `FRAGMENTS_PASSWORD` | mot de passe de l'interface web (**obligatoire**) |
+| `FRAGMENTS_PASSWORD` | mot de passe de l'interface web (**obligatoire**, sauf si OIDC est configuré) |
 | `FRAGMENTS_SECRET` | clé de signature des sessions (longue et stable) |
+| `FRAGMENTS_OIDC_ISSUER` / `FRAGMENTS_OIDC_CLIENT_ID` | connexion via un fournisseur OIDC (ex. Pocket ID) ; si définis, la connexion par mot de passe est désactivée |
+| `FRAGMENTS_OIDC_CLIENT_SECRET` | secret client OIDC (facultatif — vide = client public, PKCE) |
+| `FRAGMENTS_PUBLIC_URL` | URL publique de l'app (obligatoire avec OIDC ; sert au callback) |
 
 ## L'interface web
 

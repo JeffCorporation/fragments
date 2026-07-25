@@ -21,14 +21,15 @@ import (
 // Server wires the config, the catalog store, the worker coordinator, and the
 // Gin engine together.
 type Server struct {
-	cfg    Config
-	catCfg *catalog.Config // S3 + paths, for album export
-	store  *catalog.Store
-	coord  *worker.Coordinator
-	log    *log.Logger
-	auth   *authenticator
-	engine *gin.Engine
-	done   chan struct{} // closed at shutdown to release long-lived SSE handlers
+	cfg      Config
+	catCfg   *catalog.Config // S3 + paths, for album export
+	store    *catalog.Store
+	coord    *worker.Coordinator
+	log      *log.Logger
+	auth     *authenticator
+	oidcAuth *oidcAuthenticator // nil unless cfg.OIDC.Enabled
+	engine   *gin.Engine
+	done     chan struct{} // closed at shutdown to release long-lived SSE handlers
 }
 
 // New builds a Server. logger may be nil (logging is then discarded).
@@ -45,6 +46,19 @@ func New(cfg Config, catCfg *catalog.Config, store *catalog.Store, coord *worker
 		log:    logger,
 		auth:   newAuthenticator(cfg),
 		done:   make(chan struct{}),
+	}
+	if cfg.OIDC.Enabled {
+		s.oidcAuth = newOIDCAuthenticator(cfg.OIDC, s.auth)
+		// Warm up discovery in the background: boot must not depend on the IdP
+		// being reachable, but a typo'd issuer should surface in the log right
+		// away rather than on the first login attempt (init retries lazily).
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if _, _, err := s.oidcAuth.init(ctx); err != nil {
+				s.log.Printf("warning: %v — will retry on first login", err)
+			}
+		}()
 	}
 	s.engine = s.buildRouter()
 	return s
@@ -64,8 +78,18 @@ func (s *Server) buildRouter() *gin.Engine {
 	}
 	r.Use(gin.Recovery(), s.requestLogger(), limitRequestBody(1<<20))
 
-	// Public.
-	r.POST("/api/login", s.handleLogin)
+	// Public. The auth method is exclusive: OIDC, when configured, replaces
+	// password login entirely (and its routes don't exist in password mode).
+	r.GET("/api/auth/config", s.handleAuthConfig)
+	if s.cfg.OIDC.Enabled {
+		r.GET(oidcStartPath, s.handleOIDCStart)
+		r.GET(oidcCallbackPath, s.handleOIDCCallback)
+		r.POST("/api/login", func(c *gin.Context) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "password auth disabled (OIDC active)"})
+		})
+	} else {
+		r.POST("/api/login", s.handleLogin)
+	}
 	r.GET("/api/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
 
 	// Authenticated JSON API.

@@ -19,13 +19,50 @@ Remplis un `.env` (voir `.env.example` à la racine) avec au minimum :
 
 | Variable | Rôle |
 |---|---|
-| `FRAGMENTS_PASSWORD` | mot de passe de connexion (**obligatoire**) |
+| `FRAGMENTS_PASSWORD` | mot de passe de connexion (**obligatoire**, sauf si OIDC est configuré — voir plus bas) |
 | `FRAGMENTS_SECRET` | clé HMAC stable pour signer les sessions (sinon régénérée à chaque démarrage → déconnexions) |
 | `FRAGMENTS_SECURE=true` | active le flag `Secure` des cookies (derrière HTTPS) |
 | `FRAGMENTS_TRUSTED_PROXIES=127.0.0.1` | **important derrière Caddy** : sans ça, toutes les IP clientes deviennent celle du proxy et le rate-limit de login les regroupe |
 | `S3_*` | accès S3 (nécessaires pour cataloguer et pour l'export d'albums) |
 | `FRAGMENTS_WORKERS=2` | concurrence du pool (2-4 sur un petit VPS) |
 | `FRAGMENTS_FAST_THUMBS=true` | resampler plus léger (ApproxBiLinear) si le CPU du VPS est juste |
+
+## Connexion via OIDC (Pocket ID)
+
+fragments peut déléguer l'authentification à un fournisseur OIDC — pensé pour
+[Pocket ID](https://pocket-id.org/). Dès que `FRAGMENTS_OIDC_ISSUER` et
+`FRAGMENTS_OIDC_CLIENT_ID` sont définis, **la connexion par mot de passe est
+désactivée** et OIDC devient la seule méthode.
+
+1. Dans Pocket ID, crée un client OIDC avec l'URL de callback :
+   `https://photos.example.com/api/auth/oidc/callback` (soit
+   `<FRAGMENTS_PUBLIC_URL>/api/auth/oidc/callback`). Le flux est Authorization
+   Code + **PKCE** : le secret client est facultatif (client public possible).
+2. Dans le `.env` (pas de commentaire en fin de ligne : systemd `EnvironmentFile`
+   les inclurait dans la valeur) :
+   ```bash
+   # EXACTEMENT l'issuer de Pocket ID (attention au slash final)
+   FRAGMENTS_OIDC_ISSUER=https://id.example.com
+   FRAGMENTS_OIDC_CLIENT_ID=...
+   # facultatif (vide = client public, PKCE)
+   FRAGMENTS_OIDC_CLIENT_SECRET=...
+   # le domaine servi par Caddy
+   FRAGMENTS_PUBLIC_URL=https://photos.example.com
+   # libellé du bouton de connexion
+   FRAGMENTS_OIDC_PROVIDER_NAME=Pocket ID
+   ```
+3. Le contrôle d'accès (qui peut se connecter) se gère **dans Pocket ID** via
+   les groupes autorisés du client — fragments fait confiance au fournisseur.
+
+Notes :
+
+- La session fragments reste le cookie signé habituel ; la déconnexion est
+  **locale** (la session Pocket ID reste active — comportement SSO normal).
+- Si la discovery échoue au démarrage avec « issuer did not match », vérifie le
+  slash final de `FRAGMENTS_OIDC_ISSUER` : il doit correspondre exactement à ce
+  qu'annonce le fournisseur.
+- La vérification des jetons exige une horloge à peu près juste : garde NTP
+  actif sur le VPS.
 
 ## Chemin 1 — systemd + Caddy (recommandé)
 
@@ -77,6 +114,9 @@ Image multi-stage (node build → go build → **distroless static**). Volume
 
 - [ ] `FRAGMENTS_PASSWORD` fort + `FRAGMENTS_SECRET` long et stable.
 - [ ] `FRAGMENTS_SECURE=true` (cookies derrière HTTPS).
+- [ ] OIDC : issuer exact (slash final !), `FRAGMENTS_PUBLIC_URL` = domaine
+      Caddy, callback enregistré dans Pocket ID, accès restreint aux bons
+      groupes côté Pocket ID.
 - [ ] `FRAGMENTS_TRUSTED_PROXIES=127.0.0.1` (ou le CIDR du proxy).
 - [ ] `.env` en `chmod 600`, propriétaire `fragments`.
 - [ ] Domaine pointant sur le VPS, Caddy a bien obtenu le certificat.

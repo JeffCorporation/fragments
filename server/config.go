@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -34,14 +35,77 @@ type Config struct {
 	// one was generated; the caller should warn that sessions won't survive a
 	// restart.
 	SecretGenerated bool
+
+	// OIDC, when Enabled, replaces password login entirely: /api/login is
+	// disabled and FRAGMENTS_PASSWORD is not required.
+	OIDC OIDCConfig
+}
+
+// OIDCConfig configures OIDC login (FRAGMENTS_OIDC_* env vars). It is enabled
+// when both Issuer and ClientID are set; the provider (e.g. Pocket ID) then
+// becomes the only authentication method.
+type OIDCConfig struct {
+	Enabled      bool
+	Issuer       string   // FRAGMENTS_OIDC_ISSUER, kept verbatim: go-oidc requires an exact match with the discovery document (trailing slash included)
+	ClientID     string   // FRAGMENTS_OIDC_CLIENT_ID
+	ClientSecret string   // FRAGMENTS_OIDC_CLIENT_SECRET; empty → public client, PKCE only
+	PublicURL    string   // FRAGMENTS_PUBLIC_URL, absolute http(s) URL without trailing slash; redirect URI = PublicURL + oidcCallbackPath
+	Scopes       []string // FRAGMENTS_OIDC_SCOPES (space-separated), default "openid profile email"
+	ProviderName string   // FRAGMENTS_OIDC_PROVIDER_NAME, login-button label in the SPA
+}
+
+// loadOIDCConfig reads the FRAGMENTS_OIDC_* env vars. Setting only one of
+// issuer/client-id is a misconfiguration worth refusing to start over: the
+// operator clearly intended OIDC, and silently falling back to password auth
+// would leave the instance protected by a different method than expected.
+func loadOIDCConfig() (OIDCConfig, error) {
+	issuer := strings.TrimSpace(os.Getenv("FRAGMENTS_OIDC_ISSUER"))
+	clientID := strings.TrimSpace(os.Getenv("FRAGMENTS_OIDC_CLIENT_ID"))
+	if issuer == "" && clientID == "" {
+		return OIDCConfig{}, nil
+	}
+	if issuer == "" || clientID == "" {
+		return OIDCConfig{}, fmt.Errorf("FRAGMENTS_OIDC_ISSUER and FRAGMENTS_OIDC_CLIENT_ID must both be set to enable OIDC")
+	}
+
+	publicURL := strings.TrimSpace(os.Getenv("FRAGMENTS_PUBLIC_URL"))
+	if publicURL == "" {
+		return OIDCConfig{}, fmt.Errorf("FRAGMENTS_PUBLIC_URL is required when OIDC is enabled (external base URL, e.g. https://photos.example.com)")
+	}
+	u, err := url.Parse(publicURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return OIDCConfig{}, fmt.Errorf("FRAGMENTS_PUBLIC_URL: %q is not an absolute http(s) URL", publicURL)
+	}
+
+	scopes := strings.Fields(os.Getenv("FRAGMENTS_OIDC_SCOPES"))
+	if len(scopes) == 0 {
+		scopes = []string{"openid", "profile", "email"}
+	}
+
+	return OIDCConfig{
+		Enabled:      true,
+		Issuer:       issuer,
+		ClientID:     clientID,
+		ClientSecret: os.Getenv("FRAGMENTS_OIDC_CLIENT_SECRET"),
+		PublicURL:    strings.TrimRight(publicURL, "/"),
+		Scopes:       scopes,
+		ProviderName: envOr("FRAGMENTS_OIDC_PROVIDER_NAME", "OIDC"),
+	}, nil
 }
 
 // LoadConfig reads the FRAGMENTS_* environment (the .env is already loaded by the
 // catalog config) and validates the required fields. addr, if non-empty,
 // overrides FRAGMENTS_ADDR.
 func LoadConfig(cat *catalog.Config, addr string) (Config, error) {
+	oidcCfg, err := loadOIDCConfig()
+	if err != nil {
+		return Config{}, err
+	}
+
+	// OIDC, when configured, is the only auth method — the password is then
+	// neither required nor used.
 	password := os.Getenv("FRAGMENTS_PASSWORD")
-	if password == "" {
+	if password == "" && !oidcCfg.Enabled {
 		return Config{}, fmt.Errorf("FRAGMENTS_PASSWORD is required (set it in .env or the environment)")
 	}
 
@@ -99,6 +163,7 @@ func LoadConfig(cat *catalog.Config, addr string) (Config, error) {
 		Workers:         workers,
 		TrustedProxies:  trusted,
 		SecretGenerated: generated,
+		OIDC:            oidcCfg,
 	}, nil
 }
 

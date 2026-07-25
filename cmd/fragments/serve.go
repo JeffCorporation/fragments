@@ -63,6 +63,9 @@ func serveMain(args []string) int {
 	if scfg.SecretGenerated {
 		logger.Printf("warning: FRAGMENTS_SECRET not set — generated a random one; sessions will not survive a restart. Set FRAGMENTS_SECRET to a long random string to persist logins.")
 	}
+	if scfg.OIDC.Enabled {
+		logger.Printf("auth: OIDC via %s (password login disabled); callback: %s/api/auth/oidc/callback", scfg.OIDC.Issuer, scfg.OIDC.PublicURL)
+	}
 	logger.Printf("fragments %s", version)
 	for _, u := range serveURLs(scfg.Addr) {
 		logger.Printf("open %s", u)
