@@ -3,9 +3,9 @@
 # The Go binary embeds web/dist via go:embed, so the SPA must be built BEFORE the
 # Go build. CGO_ENABLED=0 keeps the binary pure-Go / static (modernc sqlite, gin,
 # image libs are all cgo-free) so it cross-compiles and runs on a bare VPS.
-.PHONY: build ui server linux serve dev tidy clean
+.PHONY: build ui server upload linux serve dev tidy clean
 
-build: ui server
+build: ui server upload
 
 # vite empties dist/ (removing the committed .gitkeep placeholder); restore it
 # so a build never leaves the working tree dirty.
@@ -14,6 +14,10 @@ ui:
 
 server:
 	CGO_ENABLED=0 go build -o fragments ./cmd/fragments
+
+# Interactive SD-card/phone uploader (replaces upload-to-s3.sh). No SPA needed.
+upload:
+	CGO_ENABLED=0 go build -o fragments-upload ./cmd/fragments-upload
 
 # Static linux/amd64 binary for the VPS (run AFTER `make ui`).
 linux: ui
@@ -31,5 +35,5 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -f fragments fragments.exe fragments-linux-amd64
+	rm -f fragments fragments.exe fragments-linux-amd64 fragments-upload
 	rm -rf web/dist/assets web/dist/index.html

@@ -27,6 +27,22 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}}
 
+  # Uploader interactif carte SD / téléphone (remplace upload-to-s3.sh).
+  # Linux seulement pour l'instant : la détection des volumes (/run/media,
+  # gvfs) est spécifique à Linux ; Windows viendra plus tard.
+  - id: fragments-upload
+    main: ./cmd/fragments-upload
+    binary: fragments-upload
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
 archives:
   - formats: [tar.gz]
     format_overrides:

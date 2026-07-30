@@ -6,8 +6,8 @@
 reposée. Le principe :
 
 1. **Sauvegardez** votre carte SD vers un stockage objet S3 avec
-   [rclone](https://rclone.org/) (un script prêt à l'emploi est fourni) — vos
-   originaux sont à l'abri, RAW compris.
+   [rclone](https://rclone.org/) (un outil interactif, `fragments-upload`,
+   est fourni) — vos originaux sont à l'abri, RAW compris.
 2. **Cataloguez** le bucket avec `fragments scan` : l'outil apparie chaque JPEG
    avec son RAW, extrait les métadonnées EXIF, génère une miniature et range le
    tout dans une base SQLite locale. Les RAW ne sont **jamais téléchargés**,
@@ -55,7 +55,8 @@ quelque part.
 cp .env.example .env        # puis remplir clés S3 + mot de passe web
 
 # 1. Sauvegarder la carte SD vers le bucket (incrémental, ne supprime jamais)
-SRC_DIR=/chemin/vers/DCIM ./upload-to-s3.sh    # Windows : upload-to-s3.cmd
+#    Menu interactif : détecte les cartes SD / appareils montés (nécessite rclone).
+go run ./cmd/fragments-upload               # ou : fragments-upload -src /chemin/vers/DCIM
 
 # 2. Cataloguer le bucket (test possible : -prefix 100_FUJI/ -limit 10)
 go run ./cmd/fragments scan
