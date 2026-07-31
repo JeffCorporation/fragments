@@ -31,7 +31,13 @@ type PhotoListItem struct {
 	FilmSimulation string     `json:"filmSimulation"`
 	Rating         int        `json:"rating"`
 	Decision       string     `json:"decision"`
-	ThumbURL       string     `json:"thumbUrl"`
+	// JPEGSize/RAFSize are the original object sizes in bytes (RAFSize is 0
+	// when there is no RAW sibling); HasRAF flags that sibling's existence so
+	// the lightbox can grey out the RAW download entries.
+	JPEGSize int64  `json:"jpegSize"`
+	RAFSize  int64  `json:"rafSize"`
+	HasRAF   bool   `json:"hasRaf"`
+	ThumbURL string `json:"thumbUrl"`
 }
 
 // PhotoDetail is the full single-photo payload, including the raw EXIF JSON and
@@ -73,7 +79,9 @@ const listColumns = `key_base, name, folder, CAST(taken_at AS TEXT),
 	COALESCE(width,0), COALESCE(height,0), COALESCE(orientation,0),
 	COALESCE(camera_model,''), COALESCE(lens_model,''), COALESCE(iso,0),
 	COALESCE(f_number,0), COALESCE(exposure_time,''), COALESCE(focal_length,0),
-	COALESCE(film_simulation,''), COALESCE(rating,0), COALESCE(decision,''), id`
+	COALESCE(film_simulation,''), COALESCE(rating,0), COALESCE(decision,''),
+	COALESCE(jpeg_size,0), COALESCE(raf_size,0),
+	CASE WHEN raf_key IS NULL THEN 0 ELSE 1 END, id`
 
 const (
 	defaultPageLimit = 60
@@ -187,6 +195,7 @@ func (s *Store) GetPhoto(keyBase string) (*PhotoDetail, error) {
 		d           PhotoDetail
 		takenAt     sql.NullString
 		orientation int
+		hasRAF      int64 // database/sql won't reliably scan SQLite's 0/1 into a bool
 		id          int64
 		gpsLat      sql.NullFloat64
 		gpsLon      sql.NullFloat64
@@ -196,7 +205,8 @@ func (s *Store) GetPhoto(keyBase string) (*PhotoDetail, error) {
 		&d.Width, &d.Height, &orientation,
 		&d.CameraModel, &d.LensModel, &d.ISO,
 		&d.FNumber, &d.ExposureTime, &d.FocalLength,
-		&d.FilmSimulation, &d.Rating, &d.Decision, &id,
+		&d.FilmSimulation, &d.Rating, &d.Decision,
+		&d.JPEGSize, &d.RAFSize, &hasRAF, &id,
 		&d.JPEGKey, &d.RAFKey, &gpsLat, &gpsLon, &d.ExifJSON,
 	)
 	switch err {
@@ -207,6 +217,7 @@ func (s *Store) GetPhoto(keyBase string) (*PhotoDetail, error) {
 		return nil, fmt.Errorf("get photo %s: %w", keyBase, err)
 	}
 
+	d.HasRAF = hasRAF != 0
 	applyDerived(&d.PhotoListItem, takenAt, orientation)
 	if gpsLat.Valid {
 		d.GPSLat = &gpsLat.Float64
@@ -224,6 +235,7 @@ func scanListItem(rows *sql.Rows) (PhotoListItem, sql.NullString, int64, error) 
 		it          PhotoListItem
 		takenAt     sql.NullString
 		orientation int
+		hasRAF      int64 // database/sql won't reliably scan SQLite's 0/1 into a bool
 		id          int64
 	)
 	if err := rows.Scan(
@@ -231,10 +243,12 @@ func scanListItem(rows *sql.Rows) (PhotoListItem, sql.NullString, int64, error) 
 		&it.Width, &it.Height, &orientation,
 		&it.CameraModel, &it.LensModel, &it.ISO,
 		&it.FNumber, &it.ExposureTime, &it.FocalLength,
-		&it.FilmSimulation, &it.Rating, &it.Decision, &id,
+		&it.FilmSimulation, &it.Rating, &it.Decision,
+		&it.JPEGSize, &it.RAFSize, &hasRAF, &id,
 	); err != nil {
 		return it, takenAt, id, fmt.Errorf("scan photo: %w", err)
 	}
+	it.HasRAF = hasRAF != 0
 	applyDerived(&it, takenAt, orientation)
 	return it, takenAt, id, nil
 }

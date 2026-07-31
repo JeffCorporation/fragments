@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { useMessage } from 'naive-ui'
+import { NDropdown, useMessage } from 'naive-ui'
+import type { DropdownOption } from 'naive-ui'
 import { lightbox, currentItem, advanceLightbox } from '../composables/useLightbox'
 import { usePhotosStore } from '../stores/photos'
+import { downloadPhotoPath } from '../api/client'
 import StarRating from './StarRating.vue'
 import AddToAlbum from './AddToAlbum.vue'
 import CameraMeta from './CameraMeta.vue'
 import IconSkull from './IconSkull.vue'
-import { formatDateTime } from '../format'
+import { formatDateTime, formatSize } from '../format'
 
 // Two overlays teleported above PhotoSwipe's UI:
 //  - a discreet quick-info strip beside the top-left counter (filename / date /
@@ -91,6 +93,40 @@ async function rejectAndAdvance() {
   } catch (e) {
     message.error(e instanceof Error ? e.message : 'Échec')
   }
+}
+
+// ----- Spontaneous export -----
+// Three fixed entries, each annotated with its real weight. RAW-less photos keep
+// the RAW/zip entries VISIBLE but greyed (the menu must not change shape), with a
+// native title tooltip — naive-ui merges an option's `props` onto its DOM node,
+// which still gets hover events when disabled. Simpler than nesting an NTooltip
+// that would need its own z-index above PhotoSwipe.
+const NO_RAF_TIP = { title: 'Pas de RAW pour cette photo' }
+const downloadOptions = computed<DropdownOption[]>(() => {
+  const t = item.value
+  if (!t) return []
+  return [
+    { key: 'jpeg', label: `JPEG — ${formatSize(t.jpegSize)}` },
+    {
+      key: 'raw',
+      label: t.hasRaf ? `RAW — ${formatSize(t.rafSize)}` : 'RAW',
+      disabled: !t.hasRaf,
+      props: t.hasRaf ? undefined : NO_RAF_TIP,
+    },
+    {
+      key: 'both',
+      label: 'Les deux (.zip)',
+      disabled: !t.hasRaf,
+      props: t.hasRaf ? undefined : NO_RAF_TIP,
+    },
+  ]
+})
+
+// Plain navigation: the session cookie is SameSite=Lax so it rides along, and
+// Content-Disposition keeps the page in place (same pattern as the album export).
+function onDownload(kind: 'jpeg' | 'raw' | 'both') {
+  if (!item.value) return
+  window.location.href = downloadPhotoPath(item.value.keyBase, kind)
 }
 
 async function clearRating() {
@@ -194,6 +230,27 @@ onBeforeUnmount(() => {
             </svg>
           </button>
         </AddToAlbum>
+
+        <!-- Télécharger : JPEG / RAW / zip des deux, poids réels dans le menu.
+             Même z-index que le dropdown d'AddToAlbum, au-dessus de PhotoSwipe. -->
+        <n-dropdown trigger="click" :options="downloadOptions" :z-index="100003" @select="onDownload">
+          <button
+            type="button"
+            class="lb-btn"
+            title="Télécharger"
+            aria-label="Télécharger"
+            aria-haspopup="menu"
+          >
+            <svg
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+            >
+              <path d="M12 4v11" />
+              <path d="M7 10.5 12 15l5-4.5" />
+              <line x1="5" y1="20" x2="19" y2="20" />
+            </svg>
+          </button>
+        </n-dropdown>
 
         <!-- Infos : bascule le tiroir EXIF ; pastille pleine accent quand ouvert. -->
         <button

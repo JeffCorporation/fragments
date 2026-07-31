@@ -19,6 +19,9 @@ export interface PhotoItem {
   rating: number
   decision: string // '' (undecided / kept via rating) | 'discard' (rejected)
   thumbUrl: string
+  jpegSize: number // object sizes in bytes, for the download menu
+  rafSize: number // 0 when the photo has no RAF
+  hasRaf: boolean
 }
 
 export interface PhotoDetail extends PhotoItem {
@@ -116,4 +119,9 @@ export function encodeKeyBase(keyBase: string): string {
 // photoPath builds the API path for a single photo.
 export function photoPath(keyBase: string): string {
   return '/api/photos/' + encodeKeyBase(keyBase)
+}
+
+// downloadPhotoPath builds the streaming download URL for a single photo (navigated to, not fetched).
+export function downloadPhotoPath(keyBase: string, kind: 'jpeg' | 'raw' | 'both'): string {
+  return photoPath(keyBase) + '/download?kind=' + kind
 }

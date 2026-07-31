@@ -50,6 +50,15 @@ func (s *Server) handlePhotos(c *gin.Context) {
 // GET /api/photos/*keyBase  (the wildcard keeps the '/' inside key_base intact)
 func (s *Server) handlePhotoDetail(c *gin.Context) {
 	keyBase := strings.TrimPrefix(c.Param("keyBase"), "/")
+	// Gin cannot register /photos/*keyBase/download next to /photos/*keyBase (a
+	// wildcard must be the final route segment), so the download endpoint is
+	// dispatched here off the wildcard's suffix instead. The kind query is
+	// required so a photo whose key_base legitimately ends in "/download"
+	// (e.g. "2026-07/download.JPG") keeps its detail route.
+	if strings.HasSuffix(keyBase, "/download") && c.Query("kind") != "" {
+		s.handleDownloadPhoto(c, strings.TrimSuffix(keyBase, "/download"))
+		return
+	}
 	if keyBase == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing key"})
 		return

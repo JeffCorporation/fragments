@@ -79,7 +79,12 @@ func (s *Server) handleExportAlbum(c *gin.Context) {
 // (preserving the folder structure). Streaming keeps memory flat even for RAW
 // files of 100+ MB.
 func addObjectToZip(ctx context.Context, zw *zip.Writer, bucket *catalog.Bucket, key string) error {
-	name := zipEntryName(key)
+	return addObjectToZipAs(ctx, zw, bucket, key, zipEntryName(key))
+}
+
+// addObjectToZipAs is addObjectToZip with an explicit entry name, for archives
+// whose entries are named independently of the S3 key layout.
+func addObjectToZipAs(ctx context.Context, zw *zip.Writer, bucket *catalog.Bucket, key, name string) error {
 	if name == "" {
 		return fmt.Errorf("unsafe zip entry name %q", key)
 	}
