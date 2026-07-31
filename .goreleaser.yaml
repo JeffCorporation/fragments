@@ -11,7 +11,8 @@ before:
     - sh -c "test -f web/dist/index.html || { echo 'web/dist est vide — construire la SPA d abord (cd web && npm run build)'; exit 1; }"
 
 builds:
-  - main: ./cmd/fragments
+  - id: fragments
+    main: ./cmd/fragments
     binary: fragments
     env:
       - CGO_ENABLED=0
@@ -43,11 +44,29 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}}
 
+# Une archive PAR build : fragments-upload ne cible que Linux alors que
+# fragments sort aussi en Windows — les mélanger dans l'archive par défaut
+# donne un nombre de binaires différent selon la plateforme, ce que GoReleaser
+# refuse (multiple-binaries-archive). Séparer sert aussi l'utilisateur qui ne
+# veut que l'uploader sur son poste.
 archives:
-  - formats: [tar.gz]
+  - id: fragments
+    ids: [fragments]
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
         formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+      - .env.example
+
+  - id: fragments-upload
+    ids: [fragments-upload]
+    # Le défaut reprendrait project_name et collisionnerait avec l'archive
+    # principale sur les plateformes communes.
+    name_template: 'fragments-upload_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    formats: [tar.gz]
     files:
       - README.md
       - LICENSE
