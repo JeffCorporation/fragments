@@ -21,6 +21,7 @@ export interface Snapshot {
   processed: number
   skipped: number
   failed: number
+  bytesFreed: number // S3 bytes erased by a purge run (0 for catalog runs)
   startedAt: string | null
   elapsedSec: number
   rate: number
@@ -61,12 +62,12 @@ export const useRunStore = defineStore('run', {
       es = new EventSource('/api/events', { withCredentials: true })
       es.addEventListener('status', (e) => {
         const snap = JSON.parse((e as MessageEvent).data) as Snapshot
-        const wasRunning = this.prevPhase === 'running'
+        const wasActive = this.prevPhase === 'running' || this.prevPhase === 'purging'
         this.snap = snap
         this.prevPhase = snap.phase
-        // When a run finishes, new rows may exist — invalidate the gallery so it
-        // refetches the next time it is shown.
-        if (wasRunning && (snap.phase === 'done' || snap.phase === 'cancelled')) {
+        // When a run finishes, rows may have appeared (catalog) or vanished
+        // (purge) — invalidate the gallery so it refetches when shown.
+        if (wasActive && (snap.phase === 'done' || snap.phase === 'cancelled')) {
           usePhotosStore().reset()
         }
       })
@@ -95,6 +96,11 @@ export const useRunStore = defineStore('run', {
     },
     async cancel() {
       await api.post('/api/run/cancel')
+    },
+    // Erase every discarded photo. expectedCount is the count the UI displayed:
+    // the server recomputes the list and answers 409 if it no longer matches.
+    async purgeDiscarded(expectedCount: number) {
+      await api.post('/api/photos/purge-discarded', { expectedCount })
     },
   },
 })

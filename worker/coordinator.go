@@ -156,6 +156,7 @@ type event struct {
 	errMsg   string
 	phase    string
 	total    int
+	bytes    int64 // S3 bytes freed by this item (purge runs only)
 }
 
 // run executes one catalog run end to end.
@@ -372,6 +373,7 @@ func (c *Coordinator) applyEvent(ev event) bool {
 		}
 	case evItemDone:
 		c.snap.Processed++
+		c.snap.BytesFreed += ev.bytes
 	case evItemFailed:
 		c.snap.Failed++
 		c.snap.LastError = ev.keyBase + ": " + ev.errMsg

@@ -102,6 +102,11 @@ func (s *Server) buildRouter() *gin.Engine {
 	api.GET("/photos/*keyBase", s.handlePhotoDetail)
 	api.PATCH("/photos/*keyBase", s.handlePatchPhoto) // rating / decision (CSRF)
 
+	// Purge of rejected photos (CSRF-protected mutation + summary for the
+	// gallery action bar).
+	api.POST("/photos/purge-discarded", s.handlePurgeDiscarded)
+	api.GET("/discarded/summary", s.handleDiscardedSummary)
+
 	// Albums (mutations CSRF-protected).
 	api.GET("/albums", s.handleListAlbums)
 	api.POST("/albums", s.handleCreateAlbum)

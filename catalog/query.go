@@ -331,6 +331,126 @@ func (s *Store) SetDecision(keyBase, decision string) (bool, error) {
 	return n > 0, nil
 }
 
+// DiscardedPhoto carries what the purge needs to erase one rejected capture:
+// the S3 keys, the object sizes (for the freed-space tally) and the stored
+// thumbnail path.
+type DiscardedPhoto struct {
+	KeyBase   string
+	JPEGKey   string
+	JPEGSize  int64
+	RAFKey    string // "" when the capture has no RAW sibling
+	RAFSize   int64
+	ThumbPath string // "" when no thumbnail was ever rendered
+}
+
+// ListDiscarded returns every photo marked decision='discard', in stable
+// key_base order. The purge recomputes this list server-side at execution time
+// — the client never supplies keys.
+func (s *Store) ListDiscarded() ([]DiscardedPhoto, error) {
+	rows, err := s.db.Query(`SELECT key_base, jpeg_key, jpeg_size,
+		COALESCE(raf_key,''), COALESCE(raf_size,0), COALESCE(thumb_path,'')
+		FROM photos WHERE decision = 'discard' ORDER BY key_base`)
+	if err != nil {
+		return nil, fmt.Errorf("list discarded: %w", err)
+	}
+	defer rows.Close()
+
+	var photos []DiscardedPhoto
+	for rows.Next() {
+		var p DiscardedPhoto
+		if err := rows.Scan(&p.KeyBase, &p.JPEGKey, &p.JPEGSize, &p.RAFKey, &p.RAFSize, &p.ThumbPath); err != nil {
+			return nil, fmt.Errorf("list discarded: %w", err)
+		}
+		photos = append(photos, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list discarded: %w", err)
+	}
+	return photos, nil
+}
+
+// DiscardedSummary aggregates the discard pile for the gallery action bar and
+// the purge confirmation dialog: photo count, S3 object count (JPEG + RAW),
+// total bytes, and how many of those photos still sit in an album.
+type DiscardedSummary struct {
+	Count    int   `json:"count"`
+	Objects  int   `json:"objects"`
+	Bytes    int64 `json:"bytes"`
+	InAlbums int   `json:"inAlbums"`
+}
+
+// DiscardedSummary computes the summary in one indexed query.
+func (s *Store) DiscardedSummary() (DiscardedSummary, error) {
+	var d DiscardedSummary
+	err := s.db.QueryRow(`SELECT COUNT(*),
+		COALESCE(SUM(CASE WHEN raf_key IS NULL THEN 1 ELSE 2 END), 0),
+		COALESCE(SUM(jpeg_size + COALESCE(raf_size, 0)), 0),
+		(SELECT COUNT(DISTINCT ap.photo_id) FROM album_photos ap
+			JOIN photos p ON p.id = ap.photo_id WHERE p.decision = 'discard')
+		FROM photos WHERE decision = 'discard'`).
+		Scan(&d.Count, &d.Objects, &d.Bytes, &d.InAlbums)
+	if err != nil {
+		return d, fmt.Errorf("discarded summary: %w", err)
+	}
+	return d, nil
+}
+
+// StillDiscarded reports which of keyBases are still marked 'discard'. The
+// purge re-checks each batch with this right before erasing it, so un-rejecting
+// a photo from the lightbox mid-run spares it as long as its batch hasn't been
+// reached.
+func (s *Store) StillDiscarded(keyBases []string) (map[string]bool, error) {
+	still := make(map[string]bool, len(keyBases))
+	const chunk = 500
+	for start := 0; start < len(keyBases); start += chunk {
+		batch := keyBases[start:min(start+chunk, len(keyBases))]
+		args := make([]any, len(batch))
+		for i, k := range batch {
+			args[i] = k
+		}
+		q := `SELECT key_base FROM photos WHERE decision = 'discard' AND key_base IN (?` +
+			strings.Repeat(",?", len(batch)-1) + `)`
+		rows, err := s.db.Query(q, args...)
+		if err != nil {
+			return nil, fmt.Errorf("still discarded: %w", err)
+		}
+		for rows.Next() {
+			var kb string
+			if err := rows.Scan(&kb); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("still discarded: %w", err)
+			}
+			still[kb] = true
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("still discarded: %w", err)
+		}
+		rows.Close()
+	}
+	return still, nil
+}
+
+// DeletePhotos removes the catalog rows for keyBases. Album membership rows go
+// with them via album_photos' ON DELETE CASCADE (foreign_keys=ON). Deletion is
+// chunked so the statement stays well under SQLite's bind-variable cap and each
+// write transaction stays short (the pool has a single connection).
+func (s *Store) DeletePhotos(keyBases []string) error {
+	const chunk = 500
+	for start := 0; start < len(keyBases); start += chunk {
+		batch := keyBases[start:min(start+chunk, len(keyBases))]
+		args := make([]any, len(batch))
+		for i, k := range batch {
+			args[i] = k
+		}
+		q := `DELETE FROM photos WHERE key_base IN (?` + strings.Repeat(",?", len(batch)-1) + `)`
+		if _, err := s.db.Exec(q, args...); err != nil {
+			return fmt.Errorf("delete photos: %w", err)
+		}
+	}
+	return nil
+}
+
 // decodeCursor reverses encodeCursor. takenAt values contain no '|', so a
 // 3-way split is unambiguous.
 func decodeCursor(s string) (isNull bool, takenAt string, id int64, err error) {

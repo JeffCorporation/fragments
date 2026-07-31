@@ -35,3 +35,19 @@ export function formatDateTime(takenAt: string | null): string {
   const d = toDate(takenAt)
   return d ? dateTimeFmt.format(d) : ''
 }
+
+/** Byte size in French units, e.g. "4,2 Mo" — for object sizes and freed space. */
+export function formatSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return ''
+  if (bytes < 1024) return `${bytes} o`
+  const units = ['Ko', 'Mo', 'Go', 'To']
+  let v = bytes
+  let i = -1
+  do {
+    v /= 1024
+    i++
+    // Advance on the DISPLAYED value: 1 048 550 octets arrondis à un chiffre
+    // donnent 1024,0 Ko — qui doit s'afficher « 1 Mo », pas « 1 024 Ko ».
+  } while (Math.round(v * 10) / 10 >= 1024 && i < units.length - 1)
+  return `${v.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} ${units[i]}`
+}

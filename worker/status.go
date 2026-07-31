@@ -26,11 +26,12 @@ type ItemError struct {
 // state wholesale (no delta merging).
 type Snapshot struct {
 	Active         bool           `json:"active"`
-	Phase          string         `json:"phase"` // idle | listing | running | done | cancelled | error
+	Phase          string         `json:"phase"` // idle | listing | running | purging | done | cancelled | error
 	Total          int            `json:"total"`
 	Processed      int            `json:"processed"`
 	Skipped        int            `json:"skipped"`
 	Failed         int            `json:"failed"`
+	BytesFreed     int64          `json:"bytesFreed"` // S3 bytes erased by a purge run (0 for catalog runs)
 	StartedAt      *time.Time     `json:"startedAt"`
 	ElapsedSec     float64        `json:"elapsedSec"`
 	Rate           float64        `json:"rate"`   // completed photos per second (run average)

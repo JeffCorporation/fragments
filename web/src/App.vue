@@ -3,6 +3,7 @@ import { NConfigProvider, NMessageProvider, NGlobalStyle, darkTheme } from 'naiv
 import type { GlobalThemeOverrides } from 'naive-ui'
 import LightboxBar from './components/LightboxBar.vue'
 import ExifPanel from './components/ExifPanel.vue'
+import PurgeToaster from './components/PurgeToaster.vue'
 
 // Single source of theme truth: a dark Naive theme with an amber accent that
 // matches the bespoke gallery CSS. Dark-by-default suits the Steam Deck (glare +
@@ -25,6 +26,7 @@ const themeOverrides: GlobalThemeOverrides = {
       <router-view />
       <LightboxBar />
       <ExifPanel />
+      <PurgeToaster />
     </n-message-provider>
   </n-config-provider>
 </template>

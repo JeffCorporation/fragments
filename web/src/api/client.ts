@@ -34,6 +34,15 @@ export interface PhotoPage {
   nextCursor: string
 }
 
+// Aggregate of the photos marked 'discard' (GET /api/discarded/summary), for
+// the gallery purge bar and its confirmation dialog.
+export interface DiscardedSummary {
+  count: number
+  objects: number // S3 objects to erase (JPEG + RAW)
+  bytes: number
+  inAlbums: number // discarded photos still sitting in at least one album
+}
+
 export interface ApiError extends Error {
   status: number
 }

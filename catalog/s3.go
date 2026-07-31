@@ -12,6 +12,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 // Bucket is a thin wrapper over an S3-compatible bucket.
@@ -124,6 +125,46 @@ func (b *Bucket) OpenObject(ctx context.Context, key string) (io.ReadCloser, err
 		return nil, fmt.Errorf("get %s: %w", key, err)
 	}
 	return out.Body, nil
+}
+
+// DeleteError records one object the bucket refused to delete.
+type DeleteError struct {
+	Key     string
+	Message string
+}
+
+// DeleteObjects permanently removes the given keys, batching the calls at 1000
+// keys each (the S3 per-request cap). Per-key failures are collected and
+// returned rather than aborting the remaining batches; the error is non-nil
+// only when a whole call fails (network, auth). Deleting a key that is already
+// absent succeeds — S3 deletes are idempotent — which is exactly what the
+// purge wants for objects removed by hand.
+func (b *Bucket) DeleteObjects(ctx context.Context, keys []string) ([]DeleteError, error) {
+	const maxBatch = 1000
+	var failed []DeleteError
+	for start := 0; start < len(keys); start += maxBatch {
+		batch := keys[start:min(start+maxBatch, len(keys))]
+		objs := make([]types.ObjectIdentifier, 0, len(batch))
+		for _, k := range batch {
+			objs = append(objs, types.ObjectIdentifier{Key: aws.String(k)})
+		}
+		out, err := b.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(b.name),
+			// Quiet: only failed deletions come back in the response.
+			Delete: &types.Delete{Objects: objs, Quiet: aws.Bool(true)},
+		})
+		if err != nil {
+			return failed, fmt.Errorf("delete objects: %w", err)
+		}
+		for _, e := range out.Errors {
+			msg := aws.ToString(e.Message)
+			if code := aws.ToString(e.Code); code != "" {
+				msg = code + ": " + msg
+			}
+			failed = append(failed, DeleteError{Key: aws.ToString(e.Key), Message: msg})
+		}
+	}
+	return failed, nil
 }
 
 // GetObject downloads the full object at key into memory.

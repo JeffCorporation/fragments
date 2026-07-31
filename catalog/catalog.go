@@ -206,6 +206,16 @@ func (c *Cataloger) thumbPath(keyBase string) string {
 	return filepath.Join(c.cfg.ThumbDir, filepath.FromSlash(keyBase)+".jpg")
 }
 
+// ThumbPath exposes thumbPath for the worker purge, which must remove the
+// thumbnail of each erased photo.
+func (c *Cataloger) ThumbPath(keyBase string) string { return c.thumbPath(keyBase) }
+
+// OpenBucket opens the configured S3 bucket. The worker purge needs one outside
+// any catalog run (S3Source both lists and opens; the purge only deletes).
+func (c *Cataloger) OpenBucket(ctx context.Context) (*Bucket, error) {
+	return NewBucket(ctx, c.cfg)
+}
+
 func (c *Cataloger) logf(format string, args ...any) {
 	if c.Logf != nil {
 		c.Logf(format, args...)

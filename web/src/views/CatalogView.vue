@@ -33,6 +33,7 @@ const phaseLabels: Record<string, string> = {
   idle: 'Au repos',
   listing: 'Listing…',
   running: 'En cours',
+  purging: 'Purge…',
   done: 'Terminé',
   cancelled: 'Annulé',
   error: 'Erreur',

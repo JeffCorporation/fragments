@@ -4,6 +4,7 @@ import { NSpin, NSelect, NRate, NButton } from 'naive-ui'
 import { usePhotosStore } from '../stores/photos'
 import NavBar from '../components/NavBar.vue'
 import JustifiedGallery from '../components/JustifiedGallery.vue'
+import PurgeBar from '../components/PurgeBar.vue'
 import { openLightbox } from '../composables/useLightbox'
 
 const photos = usePhotosStore()
@@ -75,6 +76,10 @@ function onOpen(index: number) {
         Rafraîchir
       </n-button>
     </div>
+
+    <!-- Barre de purge : seulement sous le filtre « À jeter », pour que le bouton
+         destructeur ne soit jamais visible pendant le tri courant. -->
+    <PurgeBar v-if="decision === 'discard'" />
 
     <JustifiedGallery
       :items="photos.items"
