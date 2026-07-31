@@ -38,31 +38,33 @@ type RunStats struct {
 	Processed int
 	Skipped   int
 	Failed    int
+	Removed   int // rows reconciled away because their objects left the bucket
 }
 
 // FetchFunc returns the JPEG bytes for a photo (from S3 or local disk).
 type FetchFunc = func(context.Context, *Photo) ([]byte, error)
 
 // S3Source lists the bucket (under prefix, falling back to Config.Prefix) and
-// returns the photos plus a fetcher that downloads each JPEG. Shared by the
+// returns the photos, the set of every listed key base (RAW-only included, for
+// scan reconciliation), plus a fetcher that downloads each JPEG. Shared by the
 // sequential CLI (RunS3) and the concurrent worker pool.
-func (c *Cataloger) S3Source(ctx context.Context, prefix string) ([]Photo, FetchFunc, error) {
+func (c *Cataloger) S3Source(ctx context.Context, prefix string) ([]Photo, map[string]struct{}, FetchFunc, error) {
 	bucket, err := NewBucket(ctx, c.cfg)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if prefix == "" {
 		prefix = c.cfg.Prefix
 	}
 	c.logf("listing s3://%s/%s ...", c.cfg.Bucket, prefix)
-	photos, err := bucket.ListPhotos(ctx, prefix)
+	photos, present, err := bucket.ListPhotos(ctx, prefix)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	fetch := func(ctx context.Context, p *Photo) ([]byte, error) {
 		return bucket.GetObject(ctx, p.JPEG.Key)
 	}
-	return photos, fetch, nil
+	return photos, present, fetch, nil
 }
 
 // LocalSource pairs JPEG+RAF files in dir and returns the photos plus a fetcher
@@ -78,6 +80,79 @@ func (c *Cataloger) LocalSource(dir string) ([]Photo, FetchFunc, error) {
 	return photos, fetch, nil
 }
 
+// ReconcileMissing removes the catalog rows (and their local thumbnails) whose
+// bucket objects no longer appear in a listing — photos purged by another
+// fragments instance, or deleted from the bucket by hand. It NEVER touches the
+// bucket itself: the rows are the stale artifact here, the objects are already
+// gone. present must be the full key-base set returned by S3Source/ListPhotos:
+// it includes RAW-only bases, so a row whose JPEG vanished while its RAF is
+// still in the bucket is spared — which notably keeps the partial state left
+// by a failed purge (JPEG erased, RAF delete failed) replayable. Rows from
+// local-dir scans are never touched (see BucketKeyRefs), and prefix must be
+// the value passed to S3Source (the same Config.Prefix fallback is applied):
+// rows whose JPEG key falls outside it are out of the listing's scope and left
+// alone. The listing must be COMPLETE for that prefix — apply any processing
+// Limit only after this call.
+//
+// An empty listing is a no-op: a truly emptied bucket is indistinguishable
+// from a misconfigured endpoint/bucket/prefix, and wiping every row (with its
+// decisions, ratings and albums, by cascade) on a config mistake is far worse
+// than keeping stale rows one scan longer.
+func (c *Cataloger) ReconcileMissing(present map[string]struct{}, prefix string) (int, error) {
+	if len(present) == 0 {
+		return 0, nil
+	}
+	if prefix == "" {
+		prefix = c.cfg.Prefix
+	}
+
+	refs, err := c.store.BucketKeyRefs()
+	if err != nil {
+		return 0, err
+	}
+	var gone []KeyRef
+	for _, r := range refs {
+		if !strings.HasPrefix(r.JPEGKey, prefix) {
+			continue // outside the listed scope: this scan can't vouch for it
+		}
+		if _, ok := present[r.KeyBase]; ok {
+			continue
+		}
+		gone = append(gone, r)
+	}
+	if len(gone) == 0 {
+		return 0, nil
+	}
+
+	// Rows first, thumbnails second: a failed thumbnail removal leaves an
+	// orphan file (harmless), never a catalog row pointing at nothing.
+	keyBases := make([]string, len(gone))
+	for i, r := range gone {
+		keyBases[i] = r.KeyBase
+	}
+	if err := c.store.DeletePhotos(keyBases); err != nil {
+		return 0, err
+	}
+	for _, r := range gone {
+		c.removeThumbFile(c.thumbPath(r.KeyBase))
+		if r.ThumbPath != "" {
+			c.removeThumbFile(r.ThumbPath)
+		}
+		c.logf("reconcile: removed %s (gone from bucket)", r.KeyBase)
+	}
+	return len(gone), nil
+}
+
+// removeThumbFile deletes one thumbnail, treating "already absent" as success.
+func (c *Cataloger) removeThumbFile(path string) {
+	if path == "" {
+		return
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		c.logf("reconcile: remove thumb %s: %v", path, err)
+	}
+}
+
 // ShouldSkip reports whether p needs no work (its JPEG ETag is unchanged and its
 // thumbnail already exists). force always returns false. Exported for the worker
 // producer, which applies the same idempotency check as the CLI.
@@ -85,13 +160,26 @@ func (c *Cataloger) ShouldSkip(p *Photo, force bool) (bool, error) {
 	return c.shouldSkip(p, force)
 }
 
-// RunS3 catalogs photos from the configured bucket.
+// RunS3 catalogs photos from the configured bucket, first reconciling away the
+// rows whose objects are no longer listed (deleted by hand, or purged by
+// another fragments instance sharing the bucket).
 func (c *Cataloger) RunS3(ctx context.Context, opts RunOptions) (*RunStats, error) {
-	photos, fetch, err := c.S3Source(ctx, opts.Prefix)
+	photos, present, fetch, err := c.S3Source(ctx, opts.Prefix)
 	if err != nil {
 		return nil, err
 	}
-	return c.run(ctx, photos, opts, fetch)
+	removed, err := c.ReconcileMissing(present, opts.Prefix)
+	if err != nil {
+		return nil, err
+	}
+	if removed > 0 {
+		c.logf("%d photo(s) gone from the bucket, removed from the catalog", removed)
+	}
+	stats, err := c.run(ctx, photos, opts, fetch)
+	if stats != nil {
+		stats.Removed = removed
+	}
+	return stats, err
 }
 
 // RunLocal catalogs JPEG+RAF pairs from a local directory (e.g. ./sample).

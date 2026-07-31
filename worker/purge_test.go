@@ -17,21 +17,50 @@ import (
 	"fragments/catalog"
 )
 
-// stubS3 answers DeleteObjects like an S3-compatible endpoint (path-style),
-// recording the received keys and reporting the configured ones as failed.
-// When gate is non-nil the first call signals firstCall then blocks until gate
-// is closed, letting a test act between two purge batches deterministically.
+// stubObject is one object served by the stub's ListObjectsV2.
+type stubObject struct {
+	Key  string
+	Size int64
+	ETag string
+}
+
+// stubS3 answers DeleteObjects, ListObjectsV2 and GetObject like an
+// S3-compatible endpoint (path-style), recording the keys received for
+// deletion and reporting the configured ones as failed.
+// When gate is non-nil the first delete call signals firstCall then blocks
+// until gate is closed, letting a test act between two purge batches
+// deterministically.
 type stubS3 struct {
-	mu        sync.Mutex
-	received  []string
-	calls     int
-	failKeys  map[string]bool
-	gate      chan struct{}
-	firstCall chan struct{}
+	mu          sync.Mutex
+	received    []string
+	calls       int
+	failKeys    map[string]bool
+	gate        chan struct{}
+	firstCall   chan struct{}
+	listObjects []stubObject
 }
 
 func (s *stubS3) handler(t *testing.T) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Query().Get("list-type") == "2" {
+			out := `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>bucket</Name><IsTruncated>false</IsTruncated>`
+			s.mu.Lock()
+			list := append([]stubObject(nil), s.listObjects...)
+			s.mu.Unlock()
+			for _, o := range list {
+				out += fmt.Sprintf(`<Contents><Key>%s</Key><Size>%d</Size><ETag>"%s"</ETag></Contents>`, o.Key, o.Size, o.ETag)
+			}
+			out += `</ListBucketResult>`
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte(out))
+			return
+		}
+		if r.Method == http.MethodGet {
+			// GetObject: deliberately not a JPEG — scan items then fail at the
+			// thumbnail stage, which is irrelevant to what these tests assert.
+			_, _ = w.Write([]byte("not-a-jpeg"))
+			return
+		}
 		if r.Method != http.MethodPost || !r.URL.Query().Has("delete") {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
 			http.Error(w, "unexpected", http.StatusBadRequest)
@@ -266,6 +295,47 @@ func TestPurgeSparesPhotoUnrejectedMidRun(t *testing.T) {
 	}
 }
 
+// TestScanReconcilesRowsGoneFromBucket pins the scan-side reconciliation: a
+// row whose bucket object vanished (purged by another fragments instance, or
+// deleted by hand) is removed from the catalog by the next scan, thumbnail
+// included, while listed photos are untouched.
+func TestScanReconcilesRowsGoneFromBucket(t *testing.T) {
+	stub := &stubS3{listObjects: []stubObject{
+		{Key: "F/A.JPG", Size: 1000, ETag: "changed"},
+		{Key: "F/C.RAF", Size: 3000, ETag: "raf"}, // C's JPEG is gone, its RAF is not
+	}}
+	coord, store, cfg := newPurgeEnv(t, stub)
+	addPhoto(t, store, cfg, "F/A", 0, false)
+	addPhoto(t, store, cfg, "F/B", 0, false) // gone from the bucket entirely
+	addPhoto(t, store, cfg, "F/C", 3000, false)
+
+	if _, err := coord.Start(RunOptions{}); err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	snap := waitIdle(t, coord)
+
+	if snap.Phase != "done" {
+		t.Fatalf("phase = %s; want done", snap.Phase)
+	}
+	if snap.Removed != 1 {
+		t.Fatalf("removed = %d; want 1 (F/B)", snap.Removed)
+	}
+	if n, _ := store.Count(); n != 2 {
+		t.Fatalf("%d rows left; want 2 (F/A, and F/C whose RAF is still in the bucket)", n)
+	}
+	if thumbExists(cfg, "F/B") {
+		t.Fatal("reconciled row's thumbnail must be deleted")
+	}
+	if !thumbExists(cfg, "F/A") || !thumbExists(cfg, "F/C") {
+		t.Fatal("listed photos' thumbnails must survive")
+	}
+	// The listed photo was still scanned (its ETag changed); it fails on the
+	// stub's garbage JPEG, which proves reconciliation didn't derail the run.
+	if snap.Failed != 1 || snap.Total != 1 {
+		t.Fatalf("counters = %+v; want total 1, failed 1", snap)
+	}
+}
+
 func TestPurgeKeepsPhotoWhenS3DeleteFails(t *testing.T) {
 	stub := &stubS3{failKeys: map[string]bool{"F/A.RAF": true}}
 	coord, store, cfg := newPurgeEnv(t, stub)
@@ -297,5 +367,27 @@ func TestPurgeKeepsPhotoWhenS3DeleteFails(t *testing.T) {
 	sum, err := store.DiscardedSummary()
 	if err != nil || sum.Count != 1 {
 		t.Fatalf("summary after purge = %+v (err %v); want the failed photo still discarded", sum, err)
+	}
+
+	// Replayability across a scan: the purge erased F/A's JPEG but failed on
+	// its RAF, keeping the row for a retry. A scan in between must NOT
+	// reconcile that row away (the RAF is still listed), or the RAF would be
+	// orphaned in the bucket forever.
+	stub.mu.Lock()
+	stub.listObjects = []stubObject{
+		{Key: "F/A.RAF", Size: 3000, ETag: "r-F/A"},
+		{Key: "F/B.JPG", Size: 1000, ETag: "unrelated"}, // non-empty guard needs a listing anyway
+	}
+	stub.mu.Unlock()
+	if _, err := coord.Start(RunOptions{}); err != nil {
+		t.Fatalf("start scan: %v", err)
+	}
+	snap = waitIdle(t, coord)
+	if snap.Removed != 0 {
+		t.Fatalf("scan removed %d rows; the purge-retry row must survive", snap.Removed)
+	}
+	sum, err = store.DiscardedSummary()
+	if err != nil || sum.Count != 1 {
+		t.Fatalf("summary after scan = %+v (err %v); F/A must still be discarded and retryable", sum, err)
 	}
 }

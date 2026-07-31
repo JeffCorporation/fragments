@@ -147,6 +147,7 @@ const (
 	evItemDone
 	evItemFailed
 	evSkip
+	evRemoved
 )
 
 type event struct {
@@ -157,6 +158,7 @@ type event struct {
 	phase    string
 	total    int
 	bytes    int64 // S3 bytes freed by this item (purge runs only)
+	removed  int   // rows reconciled away (scan runs only)
 }
 
 // run executes one catalog run end to end.
@@ -183,23 +185,24 @@ func (c *Coordinator) run(ctx context.Context, opts RunOptions, nWorkers int) {
 			c.snap.Workers[i].Busy = false
 			c.snap.Workers[i].KeyBase = ""
 		}
-		p, sk, f, tot := c.snap.Processed, c.snap.Skipped, c.snap.Failed, c.snap.Total
+		p, sk, f, tot, rm := c.snap.Processed, c.snap.Skipped, c.snap.Failed, c.snap.Total, c.snap.Removed
 		c.mu.Unlock()
 
 		c.broadcast()
-		c.logf("run %s: %d processed, %d skipped, %d failed (of %d)", phase, p, sk, f, tot)
+		c.logf("run %s: %d processed, %d skipped, %d failed (of %d), %d removed", phase, p, sk, f, tot, rm)
 	}
 
 	// 1. List the source (S3 or a local dir for offline/testing).
 	var (
-		photos []catalog.Photo
-		fetch  catalog.FetchFunc
-		err    error
+		photos  []catalog.Photo
+		present map[string]struct{} // every listed key base, RAW-only included
+		fetch   catalog.FetchFunc
+		err     error
 	)
 	if opts.Local != "" {
 		photos, fetch, err = c.cat.LocalSource(opts.Local)
 	} else {
-		photos, fetch, err = c.cat.S3Source(ctx, opts.Prefix)
+		photos, present, fetch, err = c.cat.S3Source(ctx, opts.Prefix)
 	}
 	if err != nil {
 		if ctx.Err() != nil {
@@ -211,6 +214,20 @@ func (c *Coordinator) run(ctx context.Context, opts RunOptions, nWorkers int) {
 		}
 		return
 	}
+	// Reconcile BEFORE the Limit truncation (the listing itself is always
+	// complete) and before the writer goroutine starts (single DB writer).
+	// Local mode is a testing path with synthetic keys: never reconcile there.
+	if opts.Local == "" {
+		removed, err := c.cat.ReconcileMissing(present, opts.Prefix)
+		if err != nil {
+			finish("error", err)
+			return
+		}
+		if removed > 0 {
+			events <- event{kind: evRemoved, removed: removed}
+		}
+	}
+
 	if opts.Limit > 0 && len(photos) > opts.Limit {
 		photos = photos[:opts.Limit]
 	}
@@ -383,6 +400,8 @@ func (c *Coordinator) applyEvent(ev event) bool {
 		}
 	case evSkip:
 		c.snap.Skipped++
+	case evRemoved:
+		c.snap.Removed = ev.removed
 	}
 	c.recomputeLocked()
 	return phaseChange

@@ -129,8 +129,8 @@ func catalogMain(args []string) int {
 
 	// Always report whatever progress was made.
 	if stats != nil {
-		logger.Printf("done in %s: %d processed, %d skipped, %d failed (of %d considered)",
-			time.Since(start).Round(time.Millisecond), stats.Processed, stats.Skipped, stats.Failed, stats.Total)
+		logger.Printf("done in %s: %d processed, %d skipped, %d failed (of %d considered), %d removed",
+			time.Since(start).Round(time.Millisecond), stats.Processed, stats.Skipped, stats.Failed, stats.Total, stats.Removed)
 	}
 	if total, cerr := store.Count(); cerr == nil {
 		logger.Printf("catalog now holds %d photo(s) at %s; thumbnails in %s", total, cfg.DBPath, cfg.ThumbDir)

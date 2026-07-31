@@ -395,6 +395,41 @@ func (s *Store) DiscardedSummary() (DiscardedSummary, error) {
 	return d, nil
 }
 
+// KeyRef is the minimal identity of a cataloged photo, for reconciling the
+// catalog against a bucket listing.
+type KeyRef struct {
+	KeyBase   string
+	JPEGKey   string
+	ThumbPath string // "" when no thumbnail was ever rendered
+}
+
+// BucketKeyRefs returns the identity of every photo cataloged FROM THE BUCKET.
+// Rows written by a local-dir scan carry a synthetic "local-<size>-<mtime>"
+// jpeg_etag (an S3 ETag is an MD5 hex, possibly "-N"-suffixed — never that
+// shape) and are excluded: they never correspond to bucket objects, so an S3
+// scan reconciliation can't vouch for them and must not delete them.
+func (s *Store) BucketKeyRefs() ([]KeyRef, error) {
+	rows, err := s.db.Query(`SELECT key_base, jpeg_key, COALESCE(thumb_path,'')
+		FROM photos WHERE jpeg_etag NOT LIKE 'local-%'`)
+	if err != nil {
+		return nil, fmt.Errorf("bucket key refs: %w", err)
+	}
+	defer rows.Close()
+
+	var refs []KeyRef
+	for rows.Next() {
+		var r KeyRef
+		if err := rows.Scan(&r.KeyBase, &r.JPEGKey, &r.ThumbPath); err != nil {
+			return nil, fmt.Errorf("bucket key refs: %w", err)
+		}
+		refs = append(refs, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("bucket key refs: %w", err)
+	}
+	return refs, nil
+}
+
 // StillDiscarded reports which of keyBases are still marked 'discard'. The
 // purge re-checks each batch with this right before erasing it, so un-rejecting
 // a photo from the lightbox mid-run spares it as long as its batch hasn't been

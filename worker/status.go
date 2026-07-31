@@ -32,6 +32,7 @@ type Snapshot struct {
 	Skipped        int            `json:"skipped"`
 	Failed         int            `json:"failed"`
 	BytesFreed     int64          `json:"bytesFreed"` // S3 bytes erased by a purge run (0 for catalog runs)
+	Removed        int            `json:"removed"`    // rows reconciled away by a scan (objects gone from the bucket)
 	StartedAt      *time.Time     `json:"startedAt"`
 	ElapsedSec     float64        `json:"elapsedSec"`
 	Rate           float64        `json:"rate"`   // completed photos per second (run average)

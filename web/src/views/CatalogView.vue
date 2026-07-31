@@ -104,10 +104,12 @@ onMounted(() => run.connect())
 
       <n-card v-if="snap && snap.total > 0" size="small" class="card">
         <n-progress type="line" :percentage="run.progress" :processing="active" indicator-placement="inside" />
-        <n-grid :cols="4" :x-gap="12" style="margin-top: 16px">
+        <n-grid :cols="snap.removed ? 5 : 4" :x-gap="12" style="margin-top: 16px">
           <n-gi><n-statistic label="Traitées" :value="snap.processed" /></n-gi>
           <n-gi><n-statistic label="Ignorées" :value="snap.skipped" /></n-gi>
           <n-gi><n-statistic label="Échecs" :value="snap.failed" /></n-gi>
+          <!-- Lignes retirées du catalogue parce que leurs objets ont quitté le bucket -->
+          <n-gi v-if="snap.removed"><n-statistic label="Disparues" :value="snap.removed" /></n-gi>
           <n-gi><n-statistic label="Total" :value="snap.total" /></n-gi>
         </n-grid>
         <n-grid :cols="3" :x-gap="12" style="margin-top: 12px">

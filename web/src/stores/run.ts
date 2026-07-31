@@ -22,6 +22,7 @@ export interface Snapshot {
   skipped: number
   failed: number
   bytesFreed: number // S3 bytes erased by a purge run (0 for catalog runs)
+  removed: number // rows reconciled away by a scan (objects gone from the bucket)
   startedAt: string | null
   elapsedSec: number
   rate: number

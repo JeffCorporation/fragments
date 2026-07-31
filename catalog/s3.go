@@ -49,7 +49,12 @@ func NewBucket(ctx context.Context, c *Config) (*Bucket, error) {
 // ListPhotos lists every object under prefix and pairs JPEG + RAW siblings into
 // Photos, keyed by the path without extension. Objects with other extensions
 // (and folder placeholders) are ignored. The result is sorted by key.
-func (b *Bucket) ListPhotos(ctx context.Context, prefix string) ([]Photo, error) {
+//
+// The second return is every key base the listing saw — INCLUDING RAW-only
+// bases, which the []Photo drops (no JPEG, nothing to catalog). Scan
+// reconciliation must test presence against this set: a base whose JPEG
+// vanished but whose RAF is still in the bucket still owns an original.
+func (b *Bucket) ListPhotos(ctx context.Context, prefix string) ([]Photo, map[string]struct{}, error) {
 	byBase := map[string]*Photo{}
 
 	paginator := s3.NewListObjectsV2Paginator(b.client, &s3.ListObjectsV2Input{
@@ -59,7 +64,7 @@ func (b *Bucket) ListPhotos(ctx context.Context, prefix string) ([]Photo, error)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("list objects: %w", err)
+			return nil, nil, fmt.Errorf("list objects: %w", err)
 		}
 		for _, obj := range page.Contents {
 			key := aws.ToString(obj.Key)
@@ -101,8 +106,10 @@ func (b *Bucket) ListPhotos(ctx context.Context, prefix string) ([]Photo, error)
 		}
 	}
 
+	present := make(map[string]struct{}, len(byBase))
 	photos := make([]Photo, 0, len(byBase))
-	for _, p := range byBase {
+	for base, p := range byBase {
+		present[base] = struct{}{}
 		// Skip RAW-only captures: we need the JPEG for EXIF + thumbnail.
 		if p.JPEG.Key == "" {
 			continue
@@ -110,7 +117,7 @@ func (b *Bucket) ListPhotos(ctx context.Context, prefix string) ([]Photo, error)
 		photos = append(photos, *p)
 	}
 	sort.Slice(photos, func(i, j int) bool { return photos[i].KeyBase < photos[j].KeyBase })
-	return photos, nil
+	return photos, present, nil
 }
 
 // OpenObject opens a streaming reader over the object at key; the caller must
