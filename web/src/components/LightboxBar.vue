@@ -22,6 +22,14 @@ const message = useMessage()
 const item = computed(() => currentItem())
 const dateText = computed(() => formatDateTime(item.value?.takenAt ?? null))
 
+// Denominator of the "n / N" counter: the server total when the opener provided
+// one (gallery), the loaded length otherwise (albums). Math.max covers a total
+// not yet fetched (0), an epoch-stale getter (0), and a server total
+// momentarily below the loaded count.
+const lightboxTotal = computed(() =>
+  Math.max(lightbox.getTotal ? lightbox.getTotal() : 0, lightbox.items.length),
+)
+
 async function rate(n: number) {
   if (!item.value) return
   try {
@@ -172,7 +180,12 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <template v-if="lightbox.open && item">
-      <!-- Infos rapides à côté du compteur « 1 / 80 » (haut-gauche). Affichées
+      <!-- Compteur « n / N » maison : le natif de PhotoSwipe est désactivé
+           (counter:false) car il ne sait afficher que le nombre de photos déjà
+           chargées ; ici N est le vrai total serveur (filtre compris). -->
+      <div class="lb-counter" aria-hidden="true">{{ lightbox.index + 1 }} / {{ lightboxTotal }}</div>
+
+      <!-- Infos rapides à côté du compteur (haut-gauche). Affichées
            seulement quand la largeur le permet ; sinon elles restent dans le
            tiroir Infos. aria-hidden : purement décoratif (doublon du tiroir). -->
       <div class="lb-topinfo" aria-hidden="true">

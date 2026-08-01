@@ -61,10 +61,12 @@ type PhotoFilter struct {
 }
 
 // PhotoPage is one keyset page of gallery items. NextCursor is "" when the last
-// page has been reached.
+// page has been reached. Total is the filter-scoped row count, independent of
+// the cursor, so the client can show "n / N" beyond the pages loaded so far.
 type PhotoPage struct {
 	Items      []PhotoListItem `json:"items"`
 	NextCursor string          `json:"nextCursor"`
+	Total      int             `json:"total"`
 }
 
 // listColumns is the explicit narrow column set for the gallery list. id is
@@ -89,21 +91,10 @@ const (
 	takenAtLayout    = "2006-01-02 15:04:05"
 )
 
-// ListPhotos returns one keyset page of gallery items, newest first. Ordering is
-// (taken_at DESC, id DESC) with NULL taken_at sorted last and broken by id, so
-// infinite scroll never skips or duplicates a row. Pass the previous page's
-// NextCursor to fetch the next page; an empty cursor starts from the top.
-func (s *Store) ListPhotos(filter PhotoFilter, cursor string, limit int) (*PhotoPage, error) {
-	if limit <= 0 {
-		limit = defaultPageLimit
-	}
-	if limit > maxPageLimit {
-		limit = maxPageLimit
-	}
-
-	var where []string
-	var args []any
-
+// photoWhere builds the filter WHERE fragments (no cursor predicate), shared by
+// ListPhotos and CountPhotos so the total always matches what pagination can
+// reach.
+func photoWhere(filter PhotoFilter) (where []string, args []any) {
 	if filter.Folder != "" {
 		where = append(where, "folder = ?")
 		args = append(args, filter.Folder)
@@ -130,6 +121,41 @@ func (s *Store) ListPhotos(filter PhotoFilter, cursor string, limit int) (*Photo
 		where = append(where, "decision = 'discard'")
 	case "none": // "Non décidé" → no rating and not discarded
 		where = append(where, "COALESCE(rating,0) = 0 AND decision IS NULL")
+	}
+	return where, args
+}
+
+// CountPhotos returns the number of photos matching filter.
+func (s *Store) CountPhotos(filter PhotoFilter) (int, error) {
+	where, args := photoWhere(filter)
+	q := "SELECT COUNT(*) FROM photos"
+	if len(where) > 0 {
+		q += " WHERE " + strings.Join(where, " AND ")
+	}
+	var n int
+	if err := s.db.QueryRow(q, args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count photos: %w", err)
+	}
+	return n, nil
+}
+
+// ListPhotos returns one keyset page of gallery items, newest first. Ordering is
+// (taken_at DESC, id DESC) with NULL taken_at sorted last and broken by id, so
+// infinite scroll never skips or duplicates a row. Pass the previous page's
+// NextCursor to fetch the next page; an empty cursor starts from the top.
+func (s *Store) ListPhotos(filter PhotoFilter, cursor string, limit int) (*PhotoPage, error) {
+	if limit <= 0 {
+		limit = defaultPageLimit
+	}
+	if limit > maxPageLimit {
+		limit = maxPageLimit
+	}
+
+	where, args := photoWhere(filter)
+
+	total, err := s.CountPhotos(filter)
+	if err != nil {
+		return nil, err
 	}
 
 	if cursor != "" {
@@ -162,7 +188,7 @@ func (s *Store) ListPhotos(filter PhotoFilter, cursor string, limit int) (*Photo
 	}
 	defer rows.Close()
 
-	page := &PhotoPage{Items: make([]PhotoListItem, 0, limit)}
+	page := &PhotoPage{Items: make([]PhotoListItem, 0, limit), Total: total}
 	var lastTaken sql.NullString
 	var lastID int64
 	for rows.Next() {

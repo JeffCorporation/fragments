@@ -455,6 +455,23 @@ body {
   color: var(--accent);
 }
 
+/* ----- Lightbox : compteur maison « n / N » (haut-gauche) -----
+   Remplace le compteur natif de PhotoSwipe (désactivé via counter:false) pour
+   afficher le vrai total serveur. Même position/typo que .pswp__counter. */
+.lb-counter {
+  position: fixed;
+  top: 0;
+  left: 20px;
+  height: 60px; /* aligné verticalement sur la barre du haut PhotoSwipe */
+  z-index: 100001; /* au-dessus de l'UI PhotoSwipe */
+  display: flex;
+  align-items: center;
+  color: #e8e8e8;
+  font-size: 14px;
+  pointer-events: none; /* purement informatif */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
 /* ----- Lightbox : infos rapides à côté du compteur « 1 / 80 » (haut-gauche) -----
    Nom · date · ouverture/vitesse/ISO. Doublon décoratif du tiroir Infos, affiché
    seulement quand la largeur le permet. pointer-events:none → ne capte jamais les
@@ -463,13 +480,13 @@ body {
 .lb-topinfo {
   position: fixed;
   top: 0;
-  left: 84px; /* à droite du compteur (dégagé jusqu'à ~999 photos) */
+  left: 110px; /* à droite du compteur (dégagé jusqu'à « 9999 / 9999 ») */
   height: 60px; /* aligné verticalement sur la barre du haut PhotoSwipe */
   z-index: 100001; /* au-dessus de l'UI PhotoSwipe */
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: calc(100vw - 84px - 120px); /* garde la place des boutons zoom/fermer à droite */
+  max-width: calc(100vw - 110px - 120px); /* garde la place des boutons zoom/fermer à droite */
   pointer-events: none; /* purement informatif */
   white-space: nowrap;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);

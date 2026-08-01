@@ -15,6 +15,9 @@ interface PhotosState {
   hasMore: boolean
   loading: boolean
   error: string
+  // Server-side count of the photos matching the current filter (0 until the
+  // first page lands) — the real catalog total, not how many pages are loaded.
+  total: number
   filter: GalleryFilter
   // Incremented by reset(): a page response started under an older epoch is
   // stale (filter changed / gallery refreshed while in flight) and is dropped
@@ -43,6 +46,7 @@ export const usePhotosStore = defineStore('photos', {
     hasMore: true,
     loading: false,
     error: '',
+    total: 0,
     filter: {},
     epoch: 0,
   }),
@@ -53,6 +57,7 @@ export const usePhotosStore = defineStore('photos', {
       this.cursor = ''
       this.hasMore = true
       this.error = ''
+      this.total = 0
       // An in-flight load belongs to the old epoch and will be discarded; clear
       // loading so the next loadMore() isn't wrongly debounced.
       this.loading = false
@@ -84,6 +89,7 @@ export const usePhotosStore = defineStore('photos', {
         this.items.push(...page.items)
         this.cursor = page.nextCursor
         this.hasMore = page.nextCursor !== ''
+        this.total = page.total
       } catch (e) {
         if (epoch === this.epoch) this.error = e instanceof Error ? e.message : 'Erreur de chargement'
       } finally {

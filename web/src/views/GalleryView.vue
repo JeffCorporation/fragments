@@ -39,14 +39,23 @@ watch(
 )
 
 function onOpen(index: number) {
-  openLightbox(photos.items, index)
+  // Both closures are epoch-guarded: after a filter change / refresh the
+  // lightbox still shows the old (orphaned) array, so it must neither trigger
+  // fetches on the new list nor display the new list's total.
+  const epoch = photos.epoch
+  openLightbox(photos.items, index, {
+    loadMore: () => {
+      if (photos.epoch === epoch) void photos.loadMore()
+    },
+    total: () => (photos.epoch === epoch ? photos.total : 0),
+  })
 }
 </script>
 
 <template>
   <div class="page">
     <NavBar>
-      <span class="count">{{ photos.items.length }} photos</span>
+      <span class="count">{{ photos.total || photos.items.length }} photos</span>
     </NavBar>
 
     <div class="filterbar">

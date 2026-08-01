@@ -35,6 +35,7 @@ export interface PhotoDetail extends PhotoItem {
 export interface PhotoPage {
   items: PhotoItem[]
   nextCursor: string
+  total: number // filter-scoped server count, independent of the cursor
 }
 
 // Aggregate of the photos marked 'discard' (GET /api/discarded/summary), for
