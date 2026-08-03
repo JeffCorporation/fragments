@@ -8,16 +8,29 @@ import type { PhotoDetail } from '../api/client'
 const cache = new Map<string, PhotoDetail>()
 const inflight = new Map<string, Promise<PhotoDetail>>()
 
+// clearPhotoDetailCache purge le cache après toute mutation de la bibliothèque
+// de recettes (création, édition, suppression, import) : recipeName/recipeId
+// des détails déjà chargés sont calculés côté serveur via l'empreinte partagée,
+// et deviendraient périmés pour TOUTES les photos de la même recette (bouton
+// « Nommer cette recette » fantôme → 409 garanti). Le compteur de génération
+// empêche une requête partie AVANT la purge de réinsérer sa réponse périmée.
+let generation = 0
+export function clearPhotoDetailCache(): void {
+  generation++
+  cache.clear()
+}
+
 export async function loadPhotoDetail(keyBase: string): Promise<PhotoDetail> {
   const cached = cache.get(keyBase)
   if (cached) return cached
   const pending = inflight.get(keyBase)
   if (pending) return pending
 
+  const gen = generation
   const req = api
     .get<PhotoDetail>(photoPath(keyBase))
     .then((d) => {
-      cache.set(keyBase, d)
+      if (gen === generation) cache.set(keyBase, d)
       inflight.delete(keyBase)
       return d
     })

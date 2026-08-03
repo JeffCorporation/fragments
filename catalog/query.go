@@ -49,6 +49,12 @@ type PhotoDetail struct {
 	GPSLat   *float64 `json:"gpsLat"`
 	GPSLon   *float64 `json:"gpsLon"`
 	ExifJSON string   `json:"exifJson"`
+	// RecipeHash is the fingerprint of the shot's rendering fields ("" when
+	// the photo carries no usable Fujifilm data); RecipeID/RecipeName identify
+	// the library recipe sharing that fingerprint, if one has been named.
+	RecipeHash string `json:"recipeHash"`
+	RecipeID   int64  `json:"recipeId"`
+	RecipeName string `json:"recipeName"`
 }
 
 // PhotoFilter narrows the gallery listing. Zero-value fields are ignored.
@@ -56,6 +62,7 @@ type PhotoFilter struct {
 	Folder         string // exact folder match
 	FilmSimulation string // exact film simulation match
 	CameraModel    string // exact camera model match
+	Recipe         string // exact recipe fingerprint match
 	MinRating      int    // rating >= MinRating (0 = no filter)
 	Decision       string // "keep" (rated) | "discard" | "none" (undecided) | "" (any)
 }
@@ -106,6 +113,10 @@ func photoWhere(filter PhotoFilter) (where []string, args []any) {
 	if filter.CameraModel != "" {
 		where = append(where, "camera_model = ?")
 		args = append(args, filter.CameraModel)
+	}
+	if filter.Recipe != "" {
+		where = append(where, "recipe_hash = ?")
+		args = append(args, filter.Recipe)
 	}
 	if filter.MinRating > 0 {
 		where = append(where, "COALESCE(rating,0) >= ?")
@@ -214,7 +225,11 @@ func (s *Store) ListPhotos(filter PhotoFilter, cursor string, limit int) (*Photo
 // GetPhoto returns the full detail (incl. raw EXIF) for one capture, or
 // (nil, nil) if no row matches keyBase.
 func (s *Store) GetPhoto(keyBase string) (*PhotoDetail, error) {
-	q := "SELECT " + listColumns + ", jpeg_key, COALESCE(raf_key,''), gps_lat, gps_lon, COALESCE(exif_json,'') FROM photos WHERE key_base = ?"
+	q := "SELECT " + listColumns + `, jpeg_key, COALESCE(raf_key,''), gps_lat, gps_lon, COALESCE(exif_json,''),
+		COALESCE(recipe_hash,''),
+		COALESCE((SELECT r.id FROM recipes r WHERE r.hash = photos.recipe_hash), 0),
+		COALESCE((SELECT r.name FROM recipes r WHERE r.hash = photos.recipe_hash), '')
+		FROM photos WHERE key_base = ?`
 	row := s.db.QueryRow(q, keyBase)
 
 	var (
@@ -234,6 +249,7 @@ func (s *Store) GetPhoto(keyBase string) (*PhotoDetail, error) {
 		&d.FilmSimulation, &d.Rating, &d.Decision,
 		&d.JPEGSize, &d.RAFSize, &hasRAF, &id,
 		&d.JPEGKey, &d.RAFKey, &gpsLat, &gpsLon, &d.ExifJSON,
+		&d.RecipeHash, &d.RecipeID, &d.RecipeName,
 	)
 	switch err {
 	case nil:

@@ -120,6 +120,14 @@ func ExtractMetadata(jpegData []byte) (Metadata, error) {
 		if fuji, err := parseFujiMakerNote(makerNote); err == nil && fuji != nil {
 			m.FilmSimulation = fuji.filmSimulation()
 			fujiDump = fuji.named()
+			// The canonical recipe fields ride along in the fuji dump so a
+			// future fingerprint recompute (recipe_version bump) — and the
+			// editor prefill of "name this recipe" — need no re-download.
+			if r := fuji.recipeFields(); r != nil {
+				m.Recipe = r
+				m.RecipeHash = r.Fingerprint()
+				fujiDump["Recipe"] = r
+			}
 		}
 	}
 

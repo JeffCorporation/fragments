@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { onMounted, watch, ref } from 'vue'
+import { onMounted, watch, ref, computed } from 'vue'
 import { NSpin, NSelect, NRate, NButton } from 'naive-ui'
 import { usePhotosStore } from '../stores/photos'
+import { useRecipesStore } from '../stores/recipes'
 import NavBar from '../components/NavBar.vue'
 import JustifiedGallery from '../components/JustifiedGallery.vue'
 import PurgeBar from '../components/PurgeBar.vue'
 import { openLightbox } from '../composables/useLightbox'
 
 const photos = usePhotosStore()
+const recipes = useRecipesStore()
 
 const minRating = ref<number>(photos.filter.minRating ?? 0)
 const decision = ref<string>(photos.filter.decision ?? '')
+const recipeHash = ref<string>(photos.filter.recipe ?? '')
 
 const decisionOptions = [
   { label: 'Toutes décisions', value: '' },
@@ -19,15 +22,23 @@ const decisionOptions = [
   { label: 'Non décidé', value: 'none' },
 ]
 
+// Seules les recettes nommées ET appariables (empreinte calculée) filtrent.
+const recipeOptions = computed(() => [
+  { label: 'Toutes recettes', value: '' },
+  ...recipes.list.filter((r) => r.hash).map((r) => ({ label: r.name, value: r.hash })),
+])
+
 function applyFilters() {
   photos.setFilter({
     minRating: minRating.value || undefined,
     decision: decision.value || undefined,
+    recipe: recipeHash.value || undefined,
   })
 }
 
 onMounted(() => {
   if (photos.items.length === 0) void photos.loadMore()
+  void recipes.ensure()
 })
 
 // Refetch when a finished run invalidates the store (reset → empty) while mounted.
@@ -35,6 +46,19 @@ watch(
   () => photos.items.length,
   (n) => {
     if (n === 0 && photos.hasMore && !photos.loading) void photos.loadMore()
+  },
+)
+
+// Un acteur externe peut poser le filtre pendant que la vue est montée (clic
+// sur un nom de recette dans le panneau photo → setFilter + retour galerie) :
+// resynchroniser les contrôles locaux, sinon la barre affiche un état périmé
+// et le prochain applyFilters() écraserait le filtre posé.
+watch(
+  () => photos.filter,
+  (f) => {
+    minRating.value = f.minRating ?? 0
+    decision.value = f.decision ?? ''
+    recipeHash.value = f.recipe ?? ''
   },
 )
 
@@ -72,6 +96,15 @@ function onOpen(index: number) {
         size="small"
         style="width: 170px"
         @update:value="(v: string) => { decision = v; applyFilters() }"
+      />
+      <n-select
+        v-if="recipeOptions.length > 1"
+        :value="recipeHash"
+        :options="recipeOptions"
+        size="small"
+        style="width: 200px"
+        title="Filtrer par recette"
+        @update:value="(v: string) => { recipeHash = v; applyFilters() }"
       />
       <span class="fb-spacer" />
       <n-button size="small" tertiary :loading="photos.loading" title="Rafraîchir la galerie" @click="photos.refresh()">

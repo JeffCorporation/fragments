@@ -18,6 +18,7 @@ async function logout() {
     <nav class="nav">
       <router-link to="/" class="navlink">Galerie</router-link>
       <router-link to="/albums" class="navlink">Albums</router-link>
+      <router-link to="/recipes" class="navlink">Recettes</router-link>
       <router-link to="/catalog" class="navlink">Catalogue</router-link>
     </nav>
     <span class="topbar-spacer" />

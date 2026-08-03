@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { lightbox, currentItem } from '../composables/useLightbox'
+import { useRouter } from 'vue-router'
+import { NButton, useMessage } from 'naive-ui'
+import { lightbox, currentItem, closeLightbox } from '../composables/useLightbox'
 import { loadPhotoDetail } from '../composables/usePhotoDetail'
-import type { PhotoDetail } from '../api/client'
+import type { PhotoDetail, Recipe, RecipeFields } from '../api/client'
+import { usePhotosStore } from '../stores/photos'
 import { parseExifJson } from '../exif'
 import { formatDateTime } from '../format'
+import RecipeEditor from './RecipeEditor.vue'
 
 // On-demand detail panel for the photo currently shown in the lightbox. A
 // readable "Résumé" is built from the gallery item we already have (so it paints
@@ -17,6 +21,15 @@ const loading = ref(false)
 const error = ref('')
 
 const item = computed(() => currentItem())
+
+const router = useRouter()
+const photosStore = usePhotosStore()
+const message = useMessage()
+const showNameEditor = ref(false)
+// Préremplissage figé au moment du clic : ouvrir l'éditeur ferme la
+// visionneuse, ce qui démonte le panneau et vide `detail` — le computed
+// recipePrefill serait déjà null quand l'éditeur s'initialise.
+const nameEditorPrefill = ref<RecipeFields | null>(null)
 
 // A monotonic token guards against stale responses: swiping A→B while A's fetch
 // is still in flight must not let A's (late) response overwrite B's detail. Any
@@ -81,6 +94,61 @@ const summary = computed<Row[]>(() => {
   return rows
 })
 
+// La ligne Recette s'insère sous la ligne Simulation : le Résumé est donc
+// coupé en deux autour d'elle (la recette n'arrive qu'avec le détail chargé).
+const summarySplit = computed(() => {
+  const rows = summary.value
+  const i = rows.findIndex((r) => r.label === 'Simulation')
+  return i < 0 ? { head: rows, tail: [] as Row[] } : { head: rows.slice(0, i + 1), tail: rows.slice(i + 1) }
+})
+
+// Champs canoniques décodés de la photo (fuji.Recipe du dump EXIF), pour
+// pré-remplir l'éditeur du bouton « Nommer cette recette ».
+const recipePrefill = computed<RecipeFields | null>(() => {
+  const d = detail.value
+  if (!d || !d.recipeHash) return null
+  try {
+    const obj = JSON.parse(d.exifJson) as { fuji?: { Recipe?: unknown } }
+    const rec = obj?.fuji?.Recipe
+    return rec && typeof rec === 'object' ? (rec as RecipeFields) : null
+  } catch {
+    return null
+  }
+})
+
+// Nom cliquable → galerie filtrée sur cette recette (la lightbox se ferme).
+function openRecipeGallery() {
+  const d = detail.value
+  if (!d?.recipeHash) return
+  photosStore.setFilter({ recipe: d.recipeHash })
+  closeLightbox()
+  void router.push({ name: 'gallery' })
+}
+
+// L'éditeur modal (naive-ui) vit très en dessous du z-index de PhotoSwipe
+// (100000) : ouvert par-dessus la visionneuse, il serait caché par la photo.
+// On ferme donc la visionneuse et l'éditeur s'affiche seul, préremplissage
+// capturé avant que la fermeture ne vide `detail`.
+function openNameEditor() {
+  nameEditorPrefill.value = recipePrefill.value
+  closeLightbox()
+  showNameEditor.value = true
+}
+
+// Après enregistrement : la visionneuse est fermée, donc pas de ligne à
+// rafraîchir sous les yeux de l'utilisateur — un toast confirme, et le cache
+// photo-détail (purgé par le store recettes) refera foi à la prochaine
+// ouverture. Si le panneau était encore ouvert (garde ci-dessous), la ligne
+// passe du bouton au nom sans refetch.
+function onRecipeSaved(r: Recipe) {
+  const d = detail.value
+  if (d && r.hash && r.hash === d.recipeHash) {
+    d.recipeName = r.name
+    d.recipeId = r.id
+  }
+  message.success(`Recette « ${r.name} » enregistrée`)
+}
+
 const gps = computed(() => {
   const d = detail.value
   if (!d || d.gpsLat == null || d.gpsLon == null) return null
@@ -129,7 +197,23 @@ function shutter(s: string): string {
           <section class="exif-section">
             <h3 class="exif-section-title">Résumé</h3>
             <dl class="exif-dl">
-              <div v-for="r in summary" :key="r.label" class="exif-row">
+              <div v-for="r in summarySplit.head" :key="r.label" class="exif-row">
+                <dt>{{ r.label }}</dt>
+                <dd>{{ r.value }}</dd>
+              </div>
+              <!-- Recette : nom cliquable si nommée, bouton pour la baptiser
+                   sinon ; pas de ligne du tout sans données Fujifilm. -->
+              <div v-if="detail && detail.recipeHash" class="exif-row">
+                <dt>Recette</dt>
+                <dd>
+                  <a v-if="detail.recipeName" href="#" :title="'Voir les photos de « ' + detail.recipeName + ' »'"
+                     @click.prevent="openRecipeGallery">{{ detail.recipeName }}</a>
+                  <n-button v-else size="tiny" tertiary @click="openNameEditor">
+                    Nommer cette recette
+                  </n-button>
+                </dd>
+              </div>
+              <div v-for="r in summarySplit.tail" :key="r.label" class="exif-row">
                 <dt>{{ r.label }}</dt>
                 <dd>{{ r.value }}</dd>
               </div>
@@ -163,6 +247,17 @@ function shutter(s: string): string {
                   <dd>{{ e.value }}</dd>
                 </div>
               </dl>
+              <!-- Empreinte encore anonyme : proposer de créer la recette
+                   directement sous les réglages qu'on est en train de lire. -->
+              <n-button
+                v-if="detail && detail.recipeHash && !detail.recipeName"
+                size="tiny"
+                tertiary
+                class="fuji-recipe-btn"
+                @click="openNameEditor"
+              >
+                Créer une recette avec ces réglages
+              </n-button>
             </section>
 
             <p v-if="!parsed" class="exif-status">Aucune métadonnée EXIF détaillée.</p>
@@ -170,5 +265,6 @@ function shutter(s: string): string {
         </div>
       </aside>
     </Transition>
+    <RecipeEditor v-model:show="showNameEditor" :prefill="nameEditorPrefill" @saved="onRecipeSaved" />
   </Teleport>
 </template>

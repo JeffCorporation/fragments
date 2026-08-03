@@ -49,4 +49,7 @@ type Metadata struct {
 	GPSLon         *float64
 	FilmSimulation string // Fujifilm film simulation, e.g. "Classic Chrome" ("" if absent)
 	RawJSON        string // full EXIF tag dump as JSON, for future use
+
+	Recipe     *RecipeFields // decoded Fujifilm recipe fields (nil without usable maker note)
+	RecipeHash string        // fingerprint of the rendering fields ("" if none)
 }

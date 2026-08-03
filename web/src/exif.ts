@@ -22,8 +22,10 @@ export interface ParsedExif {
 
 // Tags carrying binary blobs rather than human-readable detail. MakerNote is the
 // raw Fujifilm block we already decode into the "fuji" section, so showing its
-// undecoded bytes here would be noise.
-const HIDDEN_TAGS = new Set(['MakerNote', 'PrintImageMatching', 'ComponentsConfiguration'])
+// undecoded bytes here would be noise. "Recipe" is the canonical recipe-fields
+// object riding in the fuji dump (éditeur pré-rempli / recalculs) — the panel
+// shows its content through the per-tag rows, not as one JSON blob.
+const HIDDEN_TAGS = new Set(['MakerNote', 'PrintImageMatching', 'ComponentsConfiguration', 'Recipe'])
 
 // parseExifJson turns the stored exif_json string into sorted display rows.
 // Returns null for an empty/invalid payload (a photo cataloged without EXIF).

@@ -30,6 +30,92 @@ export interface PhotoDetail extends PhotoItem {
   gpsLat: number | null
   gpsLon: number | null
   exifJson: string
+  // Empreinte de recette Fujifilm ('' sans données exploitables) et, si une
+  // recette de la bibliothèque partage cette empreinte, son id et son nom.
+  recipeHash: string
+  recipeId: number
+  recipeName: string
+}
+
+// Champs de rendu canoniques d'une recette Fujifilm (vocabulaire exact du
+// décodeur — voir GET /api/recipes/schema). Tous optionnels : une recette
+// importée peut être partielle (fiche documentaire non appariée).
+export interface RecipeFields {
+  filmSimulation?: string
+  dynamicRange?: string
+  dRangePriority?: string
+  highlightTone?: number
+  shadowTone?: number
+  color?: number
+  sharpness?: number
+  noiseReduction?: number
+  clarity?: number
+  grainEffect?: string
+  grainSize?: string
+  colorChrome?: string
+  colorChromeFXBlue?: string
+  whiteBalance?: string
+  colorTemperature?: number
+  wbShiftRed?: number
+  wbShiftBlue?: number
+  monochromaticWC?: number
+  monochromaticMG?: number
+}
+
+export interface Recipe {
+  id: number
+  name: string
+  hash: string // '' = recette incomplète, non appariée
+  fields: RecipeFields
+  notes?: string
+  author?: string
+  authorUrl?: string
+  source?: string
+  createdAt: string
+  photoCount: number
+  coverThumbUrl: string
+  incomplete: boolean
+  missingFields?: string[]
+}
+
+// Document envoyé à POST/PATCH /api/recipes (et format d'une entrée du fichier
+// d'import/export).
+export interface RecipeBody {
+  name: string
+  fields: RecipeFields
+  notes?: string
+  author?: string
+  authorUrl?: string
+  source?: string
+}
+
+// Vocabulaire canonique + bornes + défauts servis par le backend : l'éditeur
+// construit ses contrôles contraints dessus, pour que l'empreinte d'une
+// recette saisie hache exactement comme celle d'une photo décodée.
+export interface RecipeSchema {
+  filmSimulations: string[]
+  monochromeSimulations: string[]
+  dynamicRanges: string[]
+  dRangePriorities: string[]
+  strengths: string[]
+  grainSizes: string[]
+  whiteBalances: string[]
+  bounds: Record<string, { min: number; max: number; step: number }>
+  defaults: RecipeFields
+}
+
+export interface RecipeImportItem {
+  name: string
+  status: 'imported' | 'incomplete' | 'skipped' | 'error'
+  message?: string
+}
+
+export interface RecipeImportReport {
+  imported: number
+  incomplete: number
+  skipped: number
+  errors: number
+  items: RecipeImportItem[]
 }
 
 export interface PhotoPage {

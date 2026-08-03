@@ -12,12 +12,13 @@ import (
 )
 
 // handlePhotos returns one keyset page of gallery items.
-// GET /api/photos?cursor=&limit=&minRating=&decision=&folder=&film=&camera=
+// GET /api/photos?cursor=&limit=&minRating=&decision=&folder=&film=&camera=&recipe=
 func (s *Server) handlePhotos(c *gin.Context) {
 	filter := catalog.PhotoFilter{
 		Folder:         c.Query("folder"),
 		FilmSimulation: c.Query("film"),
 		CameraModel:    c.Query("camera"),
+		Recipe:         c.Query("recipe"),
 		Decision:       c.Query("decision"),
 	}
 	if v := c.Query("minRating"); v != "" {

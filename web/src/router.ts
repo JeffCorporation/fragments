@@ -6,6 +6,8 @@ import GalleryView from './views/GalleryView.vue'
 import CatalogView from './views/CatalogView.vue'
 import AlbumsView from './views/AlbumsView.vue'
 import AlbumDetailView from './views/AlbumDetailView.vue'
+import RecipesView from './views/RecipesView.vue'
+import RecipeDetailView from './views/RecipeDetailView.vue'
 import LoginView from './views/LoginView.vue'
 
 const router = createRouter({
@@ -15,6 +17,8 @@ const router = createRouter({
     { path: '/', name: 'gallery', component: GalleryView, meta: { requiresAuth: true } },
     { path: '/albums', name: 'albums', component: AlbumsView, meta: { requiresAuth: true } },
     { path: '/albums/:id', name: 'album', component: AlbumDetailView, meta: { requiresAuth: true } },
+    { path: '/recipes', name: 'recipes', component: RecipesView, meta: { requiresAuth: true } },
+    { path: '/recipes/:id', name: 'recipe', component: RecipeDetailView, meta: { requiresAuth: true } },
     { path: '/catalog', name: 'catalog', component: CatalogView, meta: { requiresAuth: true } },
   ],
 })

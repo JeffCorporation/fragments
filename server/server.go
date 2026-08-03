@@ -107,6 +107,18 @@ func (s *Server) buildRouter() *gin.Engine {
 	api.POST("/photos/purge-discarded", s.handlePurgeDiscarded)
 	api.GET("/discarded/summary", s.handleDiscardedSummary)
 
+	// Fujifilm recipes (mutations CSRF-protected). The static segments
+	// (schema/export/import) coexist with :id in gin's tree; recipes are
+	// identified by an integer id — no wildcard pitfall.
+	api.GET("/recipes", s.handleListRecipes)
+	api.POST("/recipes", s.handleCreateRecipe)
+	api.GET("/recipes/schema", s.handleRecipeSchema)
+	api.GET("/recipes/export", s.handleExportRecipes)
+	api.POST("/recipes/import", s.handleImportRecipes)
+	api.GET("/recipes/:id", s.handleGetRecipe)
+	api.PATCH("/recipes/:id", s.handleUpdateRecipe)
+	api.DELETE("/recipes/:id", s.handleDeleteRecipe)
+
 	// Albums (mutations CSRF-protected).
 	api.GET("/albums", s.handleListAlbums)
 	api.POST("/albums", s.handleCreateAlbum)

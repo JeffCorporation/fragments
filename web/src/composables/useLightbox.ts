@@ -62,6 +62,13 @@ function toSlide(i: PhotoItem) {
   }
 }
 
+// closeLightbox programmatically closes the lightbox (e.g. before navigating
+// to the recipe-filtered gallery from the detail panel). PhotoSwipe's destroy
+// handler resets the shared state.
+export function closeLightbox(): void {
+  pswp?.close()
+}
+
 // advanceLightbox moves to the next photo, used by the keyboard culling
 // shortcuts (rate / reject auto-advance). It stays put on the last photo rather
 // than wrapping (loop is off). On a growable lightbox the last *loaded* photo

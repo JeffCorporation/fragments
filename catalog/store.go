@@ -86,26 +86,66 @@ var migrations = []string{
 	    PRIMARY KEY (album_id, photo_id)
 	);
 	CREATE INDEX IF NOT EXISTS idx_album_photos_album ON album_photos(album_id, position);`,
+
+	// v3: Fujifilm recipes. photos gains the recipe fingerprint (hash of the
+	// canonical rendering fields, see recipe.go) and the field-list version
+	// that produced it; recipes is the named library. hash is nullable UNIQUE:
+	// NULL marks an incomplete imported recipe (SQLite tolerates several NULLs
+	// under UNIQUE), and photos match a recipe purely via recipe_hash = hash —
+	// no link table, so naming a recipe labels every matching photo at once.
+	// The ALTERs are not re-runnable, but each migration now applies inside a
+	// transaction, so a failure can't leave this one half-done.
+	`ALTER TABLE photos ADD COLUMN recipe_hash TEXT;
+	ALTER TABLE photos ADD COLUMN recipe_version INTEGER;
+	CREATE INDEX IF NOT EXISTS idx_photos_recipe ON photos(recipe_hash);
+	CREATE TABLE IF NOT EXISTS recipes (
+	    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	    name        TEXT NOT NULL UNIQUE,
+	    hash        TEXT UNIQUE,
+	    fields_json TEXT NOT NULL,
+	    notes       TEXT,
+	    author      TEXT,
+	    author_url  TEXT,
+	    source      TEXT,
+	    created_at  TIMESTAMP NOT NULL
+	);`,
 }
 
 // migrate brings the database up to len(migrations) using PRAGMA user_version.
+// Each migration runs in its own transaction TOGETHER WITH its user_version
+// bump: some migrations contain non-idempotent ALTER TABLE statements, so a
+// crash window between "schema changed" and "version recorded" would leave a
+// database that can neither re-run the migration nor proceed. Committing both
+// atomically removes that window (user_version lives in the DB header and is
+// transactional in SQLite).
 func migrate(db *sql.DB) error {
 	var version int
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return fmt.Errorf("read user_version: %w", err)
 	}
 	for i := version; i < len(migrations); i++ {
-		if _, err := db.Exec(migrations[i]); err != nil {
+		if err := applyMigration(db, migrations[i], i+1); err != nil {
 			return fmt.Errorf("apply migration v%d: %w", i+1, err)
 		}
 	}
-	if version < len(migrations) {
-		// PRAGMA does not accept bound parameters; len(migrations) is trusted.
-		if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version=%d`, len(migrations))); err != nil {
-			return fmt.Errorf("set user_version: %w", err)
-		}
-	}
 	return nil
+}
+
+func applyMigration(db *sql.DB, stmt string, version int) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(stmt); err != nil {
+		tx.Rollback() //nolint:errcheck // the Exec error is the one to report
+		return err
+	}
+	// PRAGMA does not accept bound parameters; version is the loop index.
+	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version=%d`, version)); err != nil {
+		tx.Rollback() //nolint:errcheck
+		return err
+	}
+	return tx.Commit()
 }
 
 // OpenStore opens (creating if needed) the SQLite catalog at path, applies the
@@ -191,6 +231,7 @@ INSERT INTO photos (
     taken_at, camera_make, camera_model, lens_model, iso, f_number,
     exposure_time, exposure_sec, focal_length, focal_length_35,
     width, height, orientation, gps_lat, gps_lon, film_simulation, exif_json,
+    recipe_hash, recipe_version,
     cataloged_at, updated_at
 ) VALUES (
     ?, ?, ?,
@@ -199,6 +240,7 @@ INSERT INTO photos (
     ?, ?, ?, ?, ?, ?,
     ?, ?, ?, ?,
     ?, ?, ?, ?, ?, ?, ?,
+    ?, ?,
     ?, ?
 )
 ON CONFLICT(key_base) DO UPDATE SET
@@ -213,6 +255,7 @@ ON CONFLICT(key_base) DO UPDATE SET
     width=excluded.width, height=excluded.height, orientation=excluded.orientation,
     gps_lat=excluded.gps_lat, gps_lon=excluded.gps_lon,
     film_simulation=excluded.film_simulation, exif_json=excluded.exif_json,
+    recipe_hash=excluded.recipe_hash, recipe_version=excluded.recipe_version,
     updated_at=excluded.updated_at
 `,
 		p.KeyBase, p.Folder, p.Name,
@@ -224,6 +267,7 @@ ON CONFLICT(key_base) DO UPDATE SET
 		zeroToNullF(m.FocalLength), zeroToNull(m.FocalLength35),
 		zeroToNull(m.Width), zeroToNull(m.Height), zeroToNull(m.Orientation),
 		gpsLat, gpsLon, nullIfEmpty(m.FilmSimulation), nullIfEmpty(m.RawJSON),
+		nullIfEmpty(m.RecipeHash), recipeVersionOrNull(m.RecipeHash),
 		nowStr, nowStr,
 	)
 	if err != nil {
@@ -268,4 +312,13 @@ func zeroToNullF(f float64) any {
 		return nil
 	}
 	return f
+}
+
+// recipeVersionOrNull stamps the fingerprint's field-list version alongside a
+// non-empty hash (a NULL hash has no version to record).
+func recipeVersionOrNull(hash string) any {
+	if hash == "" {
+		return nil
+	}
+	return RecipeVersion
 }

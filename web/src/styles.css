@@ -950,3 +950,221 @@ body {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
   pointer-events: none;
 }
+
+/* ----- Recettes Fujifilm ----- */
+/* Cartes : la grille réutilise .album-grid/.album-card ; seuls le badge
+   « incomplète » et le sous-titre auteur sont propres aux recettes. */
+.recipe-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(250, 204, 21, 0.5);
+  color: #facc15;
+  font-size: 10.5px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+.recipe-author {
+  display: block;
+  color: #8c8c8c;
+  font-size: 12px;
+}
+
+/* Fiche de recette */
+.recipe-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.recipe-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.recipe-credit {
+  margin: 6px 0 0;
+  color: #aaa;
+  font-size: 13px;
+}
+
+.recipe-credit a {
+  color: var(--accent);
+}
+
+.recipe-missing {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  border-radius: 6px;
+  background: rgba(250, 204, 21, 0.07);
+  color: #fde68a;
+  font-size: 13px;
+}
+
+.recipe-params {
+  margin: 14px 0 0;
+  max-width: 460px;
+}
+
+.recipe-notes {
+  margin: 12px 0 0;
+  max-width: 460px;
+  color: #ccc;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.recipe-photos-title {
+  margin: 22px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.recipe-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.rp-tile img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.recipe-more {
+  margin-top: 10px;
+}
+
+/* Éditeur de recette + rapport d'import (coquille modale à la .purge-dialog,
+   sans la teinte danger : on édite, on ne détruit rien). */
+.recipe-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: #141414;
+  border: 1px solid #2e2e2e;
+  border-radius: 8px;
+  padding: 20px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.re-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+/* Les rangées sont des n-form-item (mise en page label/contrôle gérée par
+   naive-ui) : les classes ne portent que le placement dans la grille. */
+.re-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+}
+
+.re-grid .n-form-item .n-form-item-label {
+  font-size: 12px;
+}
+
+.re-row {
+  min-width: 0;
+}
+
+.re-row--wide {
+  grid-column: 1 / -1;
+}
+
+.re-row--pair {
+  display: flex;
+  gap: 14px;
+}
+
+.re-sub {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.re-warning {
+  margin: 12px 0 0;
+  color: #fde68a;
+  font-size: 13px;
+}
+
+.re-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.ri-summary {
+  margin: 0 0 10px;
+  color: #ccc;
+}
+
+.ri-items {
+  margin: 0;
+  padding-left: 18px;
+  max-height: 40vh;
+  overflow-y: auto;
+  color: #ccc;
+  font-size: 13px;
+}
+
+.ri-item {
+  margin: 4px 0;
+}
+
+.ri-item--error {
+  color: #f8b4b4;
+}
+
+.ri-item--skipped,
+.ri-item--incomplete {
+  color: #fde68a;
+}
+
+@media (max-width: 480px) {
+  .re-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Utilitaire : élément fonctionnel mais invisible (input file de l'import). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* En-tête de groupe « source » dans la vue Recettes (regroupement lâche). */
+.recipe-source-title {
+  margin: 18px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8c8c8c;
+}
+
+/* Bouton « créer une recette » sous les réglages de la section Fujifilm. */
+.fuji-recipe-btn {
+  margin-top: 8px;
+}

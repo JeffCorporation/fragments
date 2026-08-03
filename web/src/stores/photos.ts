@@ -7,6 +7,7 @@ export interface GalleryFilter {
   minRating?: number
   decision?: string // "keep" (rated) | "discard" | "none" (undecided)
   film?: string
+  recipe?: string // empreinte de recette (photos.recipe_hash)
 }
 
 interface PhotosState {
@@ -84,6 +85,7 @@ export const usePhotosStore = defineStore('photos', {
         if (this.filter.minRating) q.set('minRating', String(this.filter.minRating))
         if (this.filter.decision) q.set('decision', this.filter.decision)
         if (this.filter.film) q.set('film', this.filter.film)
+        if (this.filter.recipe) q.set('recipe', this.filter.recipe)
         const page = await api.get<PhotoPage>('/api/photos?' + q.toString())
         if (epoch !== this.epoch) return // superseded by a reset: drop the stale page
         this.items.push(...page.items)
