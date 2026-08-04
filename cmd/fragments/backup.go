@@ -70,8 +70,7 @@ func backupMain(args []string) int {
 		logger.Printf("backup: %v", err)
 		return 1
 	}
-	photos, _ := store.Count()
-	fmt.Fprintf(os.Stderr, "backed up %d photos (%s) to s3://%s/%s\n", photos, humanSize(size), cfg.BackupBucket, key)
+	fmt.Fprintf(os.Stderr, "backed up catalog (%s) to s3://%s/%s\n", humanSize(size), cfg.BackupBucket, key)
 
 	if *keep > 0 {
 		pruned, err := catalog.PruneBackups(ctx, bucket, *keep)
