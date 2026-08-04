@@ -101,14 +101,30 @@ Image multi-stage (node build → go build → **distroless static**). Volume
 - **Miniatures** : `data/thumbs/` — volume persistant **distinct** de la DB. Les
   régénérer = un `GetObject` plein-res + décodage + resize **par photo** (coûteux
   en egress S3) ; c'est la reprise la plus chère.
-- **Sauvegarde DB** (copie cohérente, WAL-safe, pur Go) :
+- **Sauvegarde DB** (copie cohérente WAL-safe, envoyée sur S3 sous `backups/`) :
   ```bash
-  /opt/fragments/fragments backup -data /opt/fragments/data /backups/catalog-$(date +%F).db
+  /opt/fragments/fragments backup -env /opt/fragments/.env -data /opt/fragments/data -keep 30
   ```
-  Mets-la dans un cron quotidien. Sauvegarde aussi `data/thumbs/` (rsync/tar).
-- **Optionnel** : Litestream (réplication continue du WAL vers un bucket
-  **séparé** du bucket photos) ; sync `data/thumbs/` → S3 pour éviter la
-  régénération.
+  Mets-la dans un cron quotidien. Chaque sauvegarde reçoit un nom horodaté
+  (`catalog-YYYYMMDD-HHMMSS.db`) ; `-keep 30` ne garde que les 30 plus récentes.
+  Un nom explicite (`-name avant-migration.db`) n'est **jamais** supprimé par la
+  rotation. Par défaut le bucket photos est utilisé ; mets `S3_BACKUP_BUCKET`
+  dans `.env` pour isoler les sauvegardes dans un bucket dédié (recommandé).
+  Sauvegarde aussi `data/thumbs/` (rsync/tar) — les miniatures ne sont pas
+  incluses.
+- **Lister** : `fragments backups -env /opt/fragments/.env` (la dernière ligne
+  est ce qu'un `restore` sans `-name` restaure).
+- **Restauration** :
+  ```bash
+  systemctl stop fragments
+  /opt/fragments/fragments restore -env /opt/fragments/.env -data /opt/fragments/data -force
+  systemctl start fragments
+  ```
+  Sans `-name`, restaure la plus récente. L'ancienne base est conservée à côté
+  (`catalog.db.pre-restore`). La sauvegarde téléchargée est vérifiée
+  (`integrity_check`, version de schéma) avant de remplacer quoi que ce soit.
+- **Optionnel** : Litestream (réplication continue du WAL) ; sync
+  `data/thumbs/` → S3 pour éviter la régénération.
 
 ## Checklist sécurité avant exposition
 

@@ -21,6 +21,7 @@ type Config struct {
 	Endpoint        string // e.g. "s3.bhs.io.cloud.ovh.net" (scheme optional)
 	Prefix          string // restrict listing to this key prefix (may be empty)
 	UsePathStyle    bool   // force path-style addressing (S3_FORCE_PATH_STYLE=true)
+	BackupBucket    string // bucket for catalog backups (S3_BACKUP_BUCKET, defaults to S3_BUCKET)
 
 	// Local output
 	DataDir    string // root for DB + thumbnails
@@ -57,6 +58,7 @@ func LoadConfig(envPath, dataDir string, thumbSize int) (*Config, error) {
 		Endpoint:     endpoint,
 		Prefix:       os.Getenv("DEST_PREFIX"),
 		UsePathStyle: strings.EqualFold(os.Getenv("S3_FORCE_PATH_STYLE"), "true"),
+		BackupBucket: firstNonEmpty(os.Getenv("S3_BACKUP_BUCKET"), os.Getenv("S3_BUCKET")),
 		DataDir:      dataDir,
 		DBPath:       filepath.Join(dataDir, "catalog.db"),
 		ThumbDir:     filepath.Join(dataDir, "thumbs"),

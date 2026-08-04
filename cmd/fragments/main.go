@@ -5,7 +5,9 @@
 //
 //	fragments scan [flags]     catalog photos (sequential CLI)
 //	fragments serve [flags]    run the web server over an existing catalog
-//	fragments backup [flags]   back up the catalog database
+//	fragments backup [flags]   upload a catalog snapshot to S3
+//	fragments restore [flags]  download a backup from S3 and install it
+//	fragments backups [flags]  list backups stored in S3
 //
 // With no command (or -h/--help) it prints this usage.
 package main
@@ -40,6 +42,10 @@ func main() {
 		os.Exit(serveMain(os.Args[2:]))
 	case "backup":
 		os.Exit(backupMain(os.Args[2:]))
+	case "restore":
+		os.Exit(restoreMain(os.Args[2:]))
+	case "backups":
+		os.Exit(backupsMain(os.Args[2:]))
 	case "-h", "--help", "help":
 		usage(os.Stdout)
 		os.Exit(0)
@@ -61,7 +67,9 @@ Usage:
 Commands:
   scan     catalog photos from S3 (or a local folder with -local) into ./data
   serve    run the web UI over an existing catalog (localhost; -network for LAN)
-  backup   back up the catalog database
+  backup   upload a catalog snapshot to S3 (-keep N rotates old backups)
+  restore  download a backup from S3 and install it as the catalog
+  backups  list backups stored in S3
 
 Run "fragments <command> -h" for the flags of a command.
 `, version)

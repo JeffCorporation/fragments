@@ -2,11 +2,14 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -44,6 +47,99 @@ func NewBucket(ctx context.Context, c *Config) (*Bucket, error) {
 		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
 	return &Bucket{client: client, name: c.Bucket}, nil
+}
+
+// NewBackupBucket builds a Bucket pointed at c.BackupBucket (same endpoint and
+// credentials as the photo bucket). BackupBucket defaults to Bucket, so this
+// only diverges when S3_BACKUP_BUCKET is set.
+func NewBackupBucket(ctx context.Context, c *Config) (*Bucket, error) {
+	bc := *c
+	bc.Bucket = firstNonEmpty(c.BackupBucket, c.Bucket)
+	return NewBucket(ctx, &bc)
+}
+
+// PutFile uploads the local file at fpath to key in a single streaming PUT.
+// The *os.File body is an io.ReadSeeker, so the SDK streams it (and can rewind
+// on retry) without loading it in memory. Returns the number of bytes sent.
+func (b *Bucket) PutFile(ctx context.Context, key, fpath string) (int64, error) {
+	f, err := os.Open(fpath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return 0, err
+	}
+	_, err = b.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(b.name),
+		Key:           aws.String(key),
+		Body:          f,
+		ContentLength: aws.Int64(st.Size()),
+		ContentType:   aws.String("application/octet-stream"),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("put %s: %w", key, err)
+	}
+	return st.Size(), nil
+}
+
+// ObjectExists reports whether key exists in the bucket.
+func (b *Bucket) ObjectExists(ctx context.Context, key string) (bool, error) {
+	_, err := b.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(b.name),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		var nf *types.NotFound
+		if errors.As(err, &nf) {
+			return false, nil
+		}
+		return false, fmt.Errorf("head %s: %w", key, err)
+	}
+	return true, nil
+}
+
+// BackupInfo describes one object found by ListBackupObjects.
+type BackupInfo struct {
+	Key          string
+	Size         int64
+	LastModified time.Time
+}
+
+// ListBackupObjects lists every object under prefix with size and modification
+// time, sorted oldest-first (ties broken by key). Unlike ListPhotos it applies
+// no extension filter, so it sees the .db backups ListPhotos would drop.
+func (b *Bucket) ListBackupObjects(ctx context.Context, prefix string) ([]BackupInfo, error) {
+	var infos []BackupInfo
+	paginator := s3.NewListObjectsV2Paginator(b.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(b.name),
+		Prefix: aws.String(prefix),
+	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list objects: %w", err)
+		}
+		for _, obj := range page.Contents {
+			key := aws.ToString(obj.Key)
+			if key == "" || strings.HasSuffix(key, "/") {
+				continue // folder placeholder
+			}
+			infos = append(infos, BackupInfo{
+				Key:          key,
+				Size:         aws.ToInt64(obj.Size),
+				LastModified: aws.ToTime(obj.LastModified),
+			})
+		}
+	}
+	sort.Slice(infos, func(i, j int) bool {
+		if !infos[i].LastModified.Equal(infos[j].LastModified) {
+			return infos[i].LastModified.Before(infos[j].LastModified)
+		}
+		return infos[i].Key < infos[j].Key
+	})
+	return infos, nil
 }
 
 // ListPhotos lists every object under prefix and pairs JPEG + RAW siblings into
